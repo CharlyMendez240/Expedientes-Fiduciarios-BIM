@@ -2,7 +2,6 @@ export function buildClientInviteEmail(opts: {
   clienteNombre: string;
   negocioNombre: string;
   folio: string;
-  authCode: string;
   accessPath: string;
 }) {
   const subject = `Solicitud de documentación — ${opts.folio} · BIM Fiduciario`;
@@ -13,8 +12,7 @@ export function buildClientInviteEmail(opts: {
         Banco Inmobiliario Mexicano le solicita documentación para el negocio
         <strong>${escapeHtml(opts.negocioNombre)}</strong> (folio ${escapeHtml(opts.folio)}).
       </p>
-      <p>Ingrese al portal con su correo y el siguiente código de autenticación:</p>
-      <p style="font-size:28px;font-weight:800;letter-spacing:0.2em;color:#004848">${opts.authCode}</p>
+      <p>Ingrese al portal con su correo. El código de acceso se muestra una sola vez al ejecutivo y no se guarda en este correo.</p>
       <p>
         <a href="${opts.accessPath}" style="display:inline-block;background:#009c3c;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:700">
           Abrir portal del cliente
@@ -24,6 +22,16 @@ export function buildClientInviteEmail(opts: {
     </div>
   `;
   return { subject, body_html };
+}
+
+export const INVITE_CODE_COOKIE = "bim_invite_once";
+
+export function readInviteCode(emailId: string, cookieValue: string | undefined): string {
+  if (!cookieValue) return "";
+  const splitAt = cookieValue.indexOf(".");
+  if (splitAt <= 0) return "";
+  if (cookieValue.slice(0, splitAt) !== emailId) return "";
+  return cookieValue.slice(splitAt + 1);
 }
 
 function escapeHtml(value: string) {

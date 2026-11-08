@@ -229,46 +229,101 @@ export default async function NegocioDetailPage({
               : ""}
           </p>
           <div className="stack" style={{ marginTop: "0.75rem" }}>
-            {tab.documents.map((doc) => {
-              const uploaded = docs.find((d) => d.tab_key === activeTab && d.doc_key === doc.key);
-              return (
-                <div key={doc.key} className="check-item" style={{ display: "block" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}>
-                    <div>
+            {activeTab === CLIENT_REQUEST_TAB ? (
+              invites.length ? (
+                invites.map((inv) => {
+                  const requested = parseDocs(inv.requested_docs);
+                  const items = catalog.filter((doc) => requested.includes(doc.key));
+                  return (
+                    <div key={inv.id} className="stack">
                       <strong>
-                        {doc.label}
-                        {doc.required ? " *" : ""}
+                        {inv.cliente_nombre} · {inv.cliente_email}
                       </strong>
-                      <div className="muted" style={{ fontSize: "0.82rem" }}>
-                        {uploaded
-                          ? `${uploaded.file_name} · ${uploaded.uploaded_by}`
-                          : "Pendiente"}
-                      </div>
+                      {items.map((doc) => {
+                        const uploaded = docs.find(
+                          (d) =>
+                            d.tab_key === CLIENT_REQUEST_TAB &&
+                            d.doc_key === doc.key &&
+                            d.request_id === inv.id,
+                        );
+                        return (
+                          <div key={`${inv.id}-${doc.key}`} className="check-item" style={{ display: "block" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}>
+                              <div>
+                                <strong>{doc.label}</strong>
+                                <div className="muted" style={{ fontSize: "0.82rem" }}>
+                                  {uploaded
+                                    ? `${uploaded.file_name} · ${uploaded.uploaded_by}`
+                                    : "Pendiente"}
+                                </div>
+                              </div>
+                              {uploaded ? (
+                                <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`}>
+                                  Descargar
+                                </a>
+                              ) : null}
+                            </div>
+                            <form
+                              action={uploadBusinessDocumentAction.bind(null, id)}
+                              className="stack"
+                              style={{ marginTop: "0.65rem" }}
+                            >
+                              <input type="hidden" name="tab_key" value={CLIENT_REQUEST_TAB} />
+                              <input type="hidden" name="doc_key" value={doc.key} />
+                              <input type="hidden" name="request_id" value={inv.id} />
+                              <input type="file" name="file" required />
+                              <button className="btn btn-secondary" type="submit">
+                                {uploaded ? "Sustituir desde el ordenador" : "Cargar desde el ordenador"}
+                              </button>
+                            </form>
+                          </div>
+                        );
+                      })}
                     </div>
-                    {uploaded ? (
-                      <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`}>
-                        Descargar
-                      </a>
-                    ) : null}
+                  );
+                })
+              ) : (
+                <p className="muted">Envíe primero la solicitud para asociar cada archivo a su cliente.</p>
+              )
+            ) : (
+              tab.documents.map((doc) => {
+                const uploaded = docs.find(
+                  (d) => d.tab_key === activeTab && d.doc_key === doc.key && !d.request_id,
+                );
+                return (
+                  <div key={doc.key} className="check-item" style={{ display: "block" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}>
+                      <div>
+                        <strong>
+                          {doc.label}
+                          {doc.required ? " *" : ""}
+                        </strong>
+                        <div className="muted" style={{ fontSize: "0.82rem" }}>
+                          {uploaded ? `${uploaded.file_name} · ${uploaded.uploaded_by}` : "Pendiente"}
+                        </div>
+                      </div>
+                      {uploaded ? (
+                        <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`}>
+                          Descargar
+                        </a>
+                      ) : null}
+                    </div>
+                    <form
+                      action={uploadBusinessDocumentAction.bind(null, id)}
+                      className="stack"
+                      style={{ marginTop: "0.65rem" }}
+                    >
+                      <input type="hidden" name="tab_key" value={activeTab} />
+                      <input type="hidden" name="doc_key" value={doc.key} />
+                      <input type="file" name="file" required />
+                      <button className="btn btn-secondary" type="submit">
+                        {uploaded ? "Sustituir desde el ordenador" : "Cargar desde el ordenador"}
+                      </button>
+                    </form>
                   </div>
-                  <form
-                    action={uploadBusinessDocumentAction.bind(null, id)}
-                    className="stack"
-                    style={{ marginTop: "0.65rem" }}
-                  >
-                    <input type="hidden" name="tab_key" value={activeTab} />
-                    <input type="hidden" name="doc_key" value={doc.key} />
-                    {uploaded?.request_id ? (
-                      <input type="hidden" name="request_id" value={uploaded.request_id} />
-                    ) : null}
-                    <input type="file" name="file" required />
-                    <button className="btn btn-secondary" type="submit">
-                      {uploaded ? "Sustituir desde el ordenador" : "Cargar desde el ordenador"}
-                    </button>
-                  </form>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </section>
       </main>

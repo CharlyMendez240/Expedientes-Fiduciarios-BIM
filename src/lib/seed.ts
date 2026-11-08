@@ -16,33 +16,42 @@ function readSecret(name: string): string | null {
   return value;
 }
 
+function readEmail(name: string): string | null {
+  const value = process.env[name]?.trim().toLowerCase() ?? "";
+  if (!/^[^\s@]+@[^\s@]+$/.test(value) || value.length > 200) return null;
+  return value;
+}
+
 function demoUsers(): DemoUser[] {
   const superPassword = readSecret("BIM_SUPER_PASSWORD");
+  const superEmail = readEmail("BIM_SUPER_EMAIL");
   const ejecutivoPassword = readSecret("BIM_EJECUTIVO_PASSWORD");
+  const ejecutivoEmail = readEmail("BIM_EJECUTIVO_EMAIL");
+  const ejecutivo2Email = readEmail("BIM_EJECUTIVO2_EMAIL");
   const users: DemoUser[] = [];
-  if (superPassword) {
+  if (superPassword && superEmail) {
     users.push({
-      email: "super@bim.demo",
+      email: superEmail,
       password: superPassword,
       name: "Superusuario BIM",
       role: "superusuario",
     });
   }
-  if (ejecutivoPassword) {
-    users.push(
-      {
-        email: "ejecutivo@bim.demo",
-        password: ejecutivoPassword,
-        name: "Ana López · Ejecutivo Norte",
-        role: "ejecutivo",
-      },
-      {
-        email: "ejecutivo2@bim.demo",
-        password: ejecutivoPassword,
-        name: "Luis Pérez · Ejecutivo Norte",
-        role: "ejecutivo",
-      },
-    );
+  if (ejecutivoPassword && ejecutivoEmail) {
+    users.push({
+      email: ejecutivoEmail,
+      password: ejecutivoPassword,
+      name: "Ejecutivo de prueba",
+      role: "ejecutivo",
+    });
+  }
+  if (ejecutivoPassword && ejecutivo2Email && ejecutivo2Email !== ejecutivoEmail) {
+    users.push({
+      email: ejecutivo2Email,
+      password: ejecutivoPassword,
+      name: "Ejecutivo de prueba 2",
+      role: "ejecutivo",
+    });
   }
   return users;
 }
@@ -61,6 +70,12 @@ export async function seedDemoData() {
 
 async function runSeed() {
   await ensureFormatTemplates();
+  await sql(
+    `update outbound_emails
+     set auth_code = '',
+         body_html = '<p>Solicitud registrada. El código de acceso no se guarda en el correo.</p>'
+     where auth_code <> '' or body_html like '%letter-spacing%'`,
+  );
   const users = demoUsers();
   if (!users.length) return;
 
@@ -115,10 +130,11 @@ async function runSeed() {
     );
   }
 
-  const ej = await sql<{ id: string }>(
-    "select id from users where email = $1 limit 1",
-    ["ejecutivo@bim.demo"],
-  );
+  const ejecutivo = users.find((user) => user.role === "ejecutivo");
+  if (!ejecutivo) return;
+  const ej = await sql<{ id: string }>("select id from users where email = $1 limit 1", [
+    ejecutivo.email,
+  ]);
   if (!ej[0]) return;
 
   const bizCount = await sql<{ c: string }>("select count(*)::text as c from businesses");
