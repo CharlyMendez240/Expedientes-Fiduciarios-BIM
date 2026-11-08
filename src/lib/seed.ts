@@ -1,4 +1,5 @@
-import { hashPassword, passwordIsStrong, verifyPassword } from "./auth";
+import { createHash } from "node:crypto";
+import { hashPassword, passwordIsStrong } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
 import { id } from "./ids";
@@ -68,37 +69,23 @@ export async function seedDemoData() {
   await seedPromise;
 }
 
+function accountFingerprint(users: DemoUser[]): string {
+  const material = users.map((user) => `${user.role}|${user.email}|${user.password}`).join("\n");
+  return createHash("sha256").update(material).digest("hex");
+}
+
 async function runSeed() {
   await ensureFormatTemplates();
-  await sql(
-    `update outbound_emails
-     set auth_code = '',
-         body_html = '<p>Solicitud registrada. El código de acceso no se guarda en el correo.</p>'
-     where auth_code <> '' or body_html like '%letter-spacing%'`,
-  );
   const users = demoUsers();
   if (!users.length) return;
 
-  const emails = users.map((user) => user.email);
-  const existing = await sql<{ email: string }>(
-    `select email from users where email in (${emails.map((_, index) => `$${index + 1}`).join(", ")})`,
-    emails,
-  );
-  if (existing.length) {
-    for (const user of users) {
-      const stored = await sql<{ password_hash: string }>(
-        "select password_hash from users where email = $1",
-        [user.email],
-      );
-      if (stored[0] && !verifyPassword(user.password, stored[0].password_hash)) {
-        await sql("update users set password_hash = $1 where email = $2", [
-          hashPassword(user.password),
-          user.email,
-        ]);
-      }
-    }
-    return;
-  }
+  await sql("create table if not exists app_meta (key text primary key, value text not null)");
+  const fingerprint = accountFingerprint(users);
+  const current = await sql<{ value: string }>("select value from app_meta where key = 'account_set'");
+  if (current[0]?.value === fingerprint) return;
+
+  await sql("delete from businesses");
+  await sql("delete from users");
 
   const regionNorte = id("reg");
   const regionCentro = id("reg");
@@ -129,6 +116,12 @@ async function runSeed() {
       ],
     );
   }
+
+  await sql(
+    `insert into app_meta (key, value) values ('account_set', $1)
+     on conflict (key) do update set value = excluded.value`,
+    [fingerprint],
+  );
 
   const ejecutivo = users.find((user) => user.role === "ejecutivo");
   if (!ejecutivo) return;
@@ -168,8 +161,6 @@ async function runSeed() {
       ],
     );
   }
-
-  await ensureFormatTemplates();
 }
 
 async function ensureFormatTemplates() {
