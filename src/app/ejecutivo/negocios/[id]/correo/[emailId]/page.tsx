@@ -22,6 +22,9 @@ export default async function CorreoEnviadoPage({
   if (!business || !(await canAccessBusiness(user, business))) {
     redirect("/ejecutivo");
   }
+  if (user.role !== "superusuario" && business.ejecutivo_id !== user.id) {
+    redirect(`/ejecutivo/negocios/${id}`);
+  }
 
   const rows = await sql<{
     to_email: string;

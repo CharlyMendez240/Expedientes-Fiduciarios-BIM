@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { canAccessBusiness, getSession } from "@/lib/auth";
 import { ensureSeed, sql } from "@/lib/db";
 
 export async function GET(
@@ -16,9 +16,10 @@ export async function GET(
     file_name: string;
     mime_type: string;
     ejecutivo_id: string;
+    region_id: string | null;
     business_id: string;
   }>(
-    `select d.content_base64, d.file_name, d.mime_type, b.ejecutivo_id, d.business_id
+    `select d.content_base64, d.file_name, d.mime_type, b.ejecutivo_id, b.region_id, d.business_id
      from business_documents d
      join businesses b on b.id = d.business_id
      where d.id = $1`,
@@ -27,7 +28,7 @@ export async function GET(
   const row = rows[0];
   if (!row) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  if (user.role === "ejecutivo" && row.ejecutivo_id !== user.id) {
+  if (user.role !== "cliente" && !(await canAccessBusiness(user, row))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
   if (user.role === "cliente") {

@@ -23,7 +23,7 @@ export default async function ClienteAccesoPage({
         <BimLogo variant="light" />
         <h1>Portal del cliente</h1>
         <p>
-          Ingrese con el correo donde recibió la solicitud y el código de autenticación de 6 dígitos.
+          Ingrese con el correo de la solicitud y el código de un solo uso del correo simulado.
         </p>
       </section>
       <section className="login-panel">
@@ -31,7 +31,9 @@ export default async function ClienteAccesoPage({
         <p className="muted" style={{ marginTop: 0 }}>
           El código llega en el correo de solicitud documental (simulado en esta demo).
         </p>
-        {q.error ? (
+        {q.error === "locked" ? (
+          <div className="error">Demasiados intentos. Espere 15 minutos y pida un código nuevo.</div>
+        ) : q.error ? (
           <div className="error">Correo o código incorrectos, o el código expiró.</div>
         ) : null}
         <form action={loginWithCodeAction} className="stack" style={{ marginTop: "1rem" }}>
@@ -51,12 +53,11 @@ export default async function ClienteAccesoPage({
             <input
               id="auth_code"
               name="auth_code"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
               required
-              placeholder="000000"
+              minLength={20}
+              maxLength={128}
               autoComplete="one-time-code"
+              spellCheck={false}
             />
           </div>
           <button className="btn btn-primary" type="submit">

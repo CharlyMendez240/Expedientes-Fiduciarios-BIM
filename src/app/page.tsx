@@ -31,7 +31,9 @@ export default async function HomePage({
           Ejecutivo / superusuario con usuario y contraseña. Cliente con código del correo.
         </p>
 
-        {params.error ? (
+        {params.error === "locked" ? (
+          <div className="error">Demasiados intentos. Espere 15 minutos e intente de nuevo.</div>
+        ) : params.error ? (
           <div className="error">Credenciales incorrectas. Revise usuario y contraseña.</div>
         ) : null}
 

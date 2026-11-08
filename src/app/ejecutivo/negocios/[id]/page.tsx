@@ -68,10 +68,9 @@ export default async function NegocioDetailPage({
     cliente_nombre: string;
     cliente_email: string;
     status: string;
-    auth_code: string | null;
     requested_docs: unknown;
   }>(
-    `select id, cliente_nombre, cliente_email, status, auth_code, requested_docs
+    `select id, cliente_nombre, cliente_email, status, requested_docs
      from requests where business_id = $1 order by created_at desc`,
     [id],
   );
@@ -182,7 +181,6 @@ export default async function NegocioDetailPage({
                   <th>Correo</th>
                   <th>Docs solicitados</th>
                   <th>Estatus</th>
-                  <th>Código</th>
                 </tr>
               </thead>
               <tbody>
@@ -197,9 +195,6 @@ export default async function NegocioDetailPage({
                     </td>
                     <td>
                       <StatusBadge status={inv.status} />
-                    </td>
-                    <td>
-                      <code>{inv.auth_code || "—"}</code>
                     </td>
                   </tr>
                 ))}

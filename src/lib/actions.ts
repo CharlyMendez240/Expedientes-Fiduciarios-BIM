@@ -15,7 +15,7 @@ import {
 import { ensureSeed, sql } from "./db";
 import { buildClientInviteEmail } from "./email";
 import { CLIENT_REQUEST_TAB, clientRequestDocs, tabByKey } from "./expediente-tabs";
-import { authCode, id, inviteToken } from "./ids";
+import { authCode, authCodeDigest, id, inviteToken } from "./ids";
 import { resolveFormatFields } from "./resolve-fields";
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -38,11 +38,11 @@ async function loadBusinessForUser(user: SessionUser, businessId: string) {
 export async function loginAction(formData: FormData) {
   const email = String(formData.get("email") || "");
   const password = String(formData.get("password") || "");
-  const user = await doLogin(email, password);
-  if (!user) redirect("/?error=1");
-  if (user.role === "superusuario") redirect("/admin");
-  if (user.role === "ejecutivo") redirect("/ejecutivo");
-  redirect("/cliente/carga");
+  const result = await doLogin(email, password);
+  if (!result.ok) redirect(result.reason === "locked" ? "/?error=locked" : "/?error=1");
+  if (result.user.role === "superusuario") redirect("/admin");
+  if (result.user.role === "ejecutivo") redirect("/ejecutivo");
+  redirect("/");
 }
 
 export async function logoutAction() {
@@ -248,7 +248,7 @@ export async function inviteClientAction(businessId: string, formData: FormData)
      set auth_code = $1, auth_code_expires = $2, email_sent_at = now(),
          cliente_nombre = $3, cliente_email = $4, requested_docs = $5::jsonb, updated_at = now()
      where id = $6`,
-    [code, expires.toISOString(), nombre, email, JSON.stringify(selected), requestId],
+    [authCodeDigest(code), expires.toISOString(), nombre, email, JSON.stringify(selected), requestId],
   );
 
   const accessPath = `/cliente/acceso?email=${encodeURIComponent(email)}`;
@@ -276,7 +276,12 @@ export async function loginWithCodeAction(formData: FormData) {
   const email = String(formData.get("email") || "");
   const code = String(formData.get("auth_code") || "");
   const result = await loginWithAuthCode(email, code);
-  if (!result) redirect("/cliente/acceso?error=1");
+  if (!result.ok) {
+    const params = new URLSearchParams({ error: result.reason === "locked" ? "locked" : "1" });
+    const normalized = email.trim();
+    if (normalized) params.set("email", normalized);
+    redirect(`/cliente/acceso?${params.toString()}`);
+  }
   redirect("/cliente/carga");
 }
 

@@ -11,7 +11,7 @@ No hay contraseñas en este repositorio. Las cuentas de demostración solo se cr
 | Superusuario | `super@bim.demo` | `BIM_SUPER_PASSWORD` |
 | Ejecutivo Norte | `ejecutivo@bim.demo` | `BIM_EJECUTIVO_PASSWORD` |
 | Ejecutivo Norte 2 | `ejecutivo2@bim.demo` | `BIM_EJECUTIVO_PASSWORD` |
-| Cliente | correo + código de 6 dígitos (tras solicitud) | — |
+| Cliente | correo + código de un solo uso, en el correo simulado | — |
 
 ## Flujo
 
