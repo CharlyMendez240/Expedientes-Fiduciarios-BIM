@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { canAccessBusiness, getSession } from "@/lib/auth";
 import { ensureSeed, sql } from "@/lib/db";
+import { INVITE_CODE_COOKIE, readInviteCode } from "@/lib/email";
 
 export default async function CorreoEnviadoPage({
   params,
@@ -31,11 +33,15 @@ export default async function CorreoEnviadoPage({
     to_name: string;
     subject: string;
     body_html: string;
-    auth_code: string;
     business_id: string;
-  }>("select * from outbound_emails where id = $1", [emailId]);
+  }>(
+    "select to_email, to_name, subject, body_html, business_id from outbound_emails where id = $1",
+    [emailId],
+  );
   const mail = rows[0];
   if (!mail || mail.business_id !== id) redirect(`/ejecutivo/negocios/${id}`);
+  const jar = await cookies();
+  const shownCode = readInviteCode(emailId, jar.get(INVITE_CODE_COOKIE)?.value);
 
   return (
     <div className="shell">
@@ -61,9 +67,16 @@ export default async function CorreoEnviadoPage({
             style={{ borderTop: "1px solid var(--line)", paddingTop: "0.85rem" }}
             dangerouslySetInnerHTML={{ __html: mail.body_html }}
           />
-          <div className="flash" style={{ marginTop: "1rem" }}>
-            Código de autenticación: <strong style={{ letterSpacing: "0.15em" }}>{mail.auth_code}</strong>
-          </div>
+          {shownCode ? (
+            <div className="flash" style={{ marginTop: "1rem" }}>
+              Código de autenticación, visible solo ahora:{" "}
+              <strong style={{ letterSpacing: "0.15em" }}>{shownCode}</strong>
+            </div>
+          ) : (
+            <p className="muted" style={{ marginTop: "1rem" }}>
+              El código no se guarda en el correo. Si ya no está en pantalla, envíe la solicitud de nuevo.
+            </p>
+          )}
           <p style={{ marginBottom: 0, marginTop: "1rem" }}>
             <Link className="btn btn-primary" href={`/cliente/acceso?email=${encodeURIComponent(mail.to_email)}`}>
               Probar acceso del cliente

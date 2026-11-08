@@ -4,14 +4,7 @@ Portal MVP de originación e integración del expediente digital fiduciario para
 
 ## Acceso inicial
 
-No hay contraseñas en este repositorio. Las cuentas de demostración solo se crean si el entorno define `BIM_SUPER_PASSWORD` y `BIM_EJECUTIVO_PASSWORD`. Cada valor debe tener al menos 12 caracteres y se guarda solo como hash.
-
-| Rol | Correo | Variable |
-| --- | --- | --- |
-| Superusuario | `super@bim.demo` | `BIM_SUPER_PASSWORD` |
-| Ejecutivo Norte | `ejecutivo@bim.demo` | `BIM_EJECUTIVO_PASSWORD` |
-| Ejecutivo Norte 2 | `ejecutivo2@bim.demo` | `BIM_EJECUTIVO_PASSWORD` |
-| Cliente | correo + código de un solo uso, en el correo simulado | — |
+No hay contraseñas ni correos de personal en este repositorio. Una cuenta de prueba solo se crea si el entorno define a la vez el correo y la contraseña: `BIM_SUPER_EMAIL` con `BIM_SUPER_PASSWORD`, o `BIM_EJECUTIVO_EMAIL` con `BIM_EJECUTIVO_PASSWORD`. La contraseña debe tener al menos 12 caracteres y se guarda solo como hash. El cliente entra con su correo y un código de un solo uso que no queda guardado en el correo simulado.
 
 ## Flujo
 

@@ -30,11 +30,10 @@ export async function GET(
   if (!row) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
   if (user.role === "cliente") {
+    if (!row.request_id) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     const owned = await sql<{ id: string }>(
-      row.request_id
-        ? "select id from requests where id = $1 and business_id = $2 and cliente_user_id = $3"
-        : "select id from requests where business_id = $1 and cliente_user_id = $2 limit 1",
-      row.request_id ? [row.request_id, row.business_id, user.id] : [row.business_id, user.id],
+      "select id from requests where id = $1 and business_id = $2 and cliente_user_id = $3",
+      [row.request_id, row.business_id, user.id],
     );
     if (!owned[0]) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   } else if (!(await canAccessBusiness(user, row))) {

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   canAccessBusiness,
@@ -13,7 +14,7 @@ import {
   type SessionUser,
 } from "./auth";
 import { ensureSeed, sql } from "./db";
-import { buildClientInviteEmail } from "./email";
+import { buildClientInviteEmail, INVITE_CODE_COOKIE } from "./email";
 import { CLIENT_REQUEST_TAB, clientRequestDocs, tabByKey } from "./expediente-tabs";
 import { authCode, authCodeDigest, id, inviteToken } from "./ids";
 import { resolveFormatFields } from "./resolve-fields";
@@ -134,7 +135,8 @@ export async function uploadBusinessDocumentAction(businessId: string, formData:
       [businessId],
     );
     if (!biz[0] || !(await canAccessBusiness(user, biz[0]))) redirect("/ejecutivo");
-    if (submittedRequestId) {
+    if (tabKey === CLIENT_REQUEST_TAB) {
+      if (!submittedRequestId) redirect(back);
       const linked = await sql<{ id: string }>(
         "select id from requests where id = $1 and business_id = $2",
         [submittedRequestId, businessId],
@@ -277,7 +279,6 @@ export async function inviteClientAction(businessId: string, formData: FormData)
     clienteNombre: nombre,
     negocioNombre: String(business.nombre),
     folio: String(business.folio),
-    authCode: code,
     accessPath,
   });
 
@@ -286,8 +287,17 @@ export async function inviteClientAction(businessId: string, formData: FormData)
     `insert into outbound_emails (
       id, to_email, to_name, subject, body_html, auth_code, business_id, request_id
     ) values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [emailId, email, nombre, mail.subject, mail.body_html, code, businessId, requestId],
+    [emailId, email, nombre, mail.subject, mail.body_html, "", businessId, requestId],
   );
+
+  const jar = await cookies();
+  jar.set(INVITE_CODE_COOKIE, `${emailId}.${code}`, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 300,
+  });
 
   revalidatePath(`/ejecutivo/negocios/${businessId}`);
   redirect(`/ejecutivo/negocios/${businessId}/correo/${emailId}`);

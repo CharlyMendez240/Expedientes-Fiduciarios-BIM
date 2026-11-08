@@ -14,7 +14,7 @@ Abrir http://127.0.0.1:3000
 
 ## Acceso inicial
 
-No hay contraseñas en este repositorio. Las cuentas de demostración solo se crean si el entorno define `BIM_SUPER_PASSWORD` y `BIM_EJECUTIVO_PASSWORD` (mínimo 12 caracteres). En Postgres se guarda el hash, no la contraseña.
+No hay contraseñas ni correos de personal en este repositorio. Una cuenta de prueba solo se crea si el entorno define el correo y la contraseña (`BIM_SUPER_EMAIL` / `BIM_SUPER_PASSWORD` o `BIM_EJECUTIVO_EMAIL` / `BIM_EJECUTIVO_PASSWORD`, mínimo 12 caracteres). En Postgres se guarda el hash, no la contraseña.
 
 ## Publish-app
 

@@ -58,7 +58,7 @@ export default async function ClienteCargaPage({
     file_name: string;
   }>(
     `select id, doc_key, file_name from business_documents
-     where business_id = $1 and tab_key = $2 and coalesce(request_id,'') in ($3, '')`,
+     where business_id = $1 and tab_key = $2 and request_id = $3`,
     [req.business_id, CLIENT_REQUEST_TAB, req.id],
   );
 
@@ -95,6 +95,11 @@ export default async function ClienteCargaPage({
                   <div className="muted" style={{ fontSize: "0.82rem" }}>
                     {uploaded ? uploaded.file_name : "Pendiente"}
                   </div>
+                  {uploaded ? (
+                    <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`}>
+                      Ver o descargar
+                    </a>
+                  ) : null}
                   <form
                     action={uploadBusinessDocumentAction.bind(null, req.business_id)}
                     className="stack"
