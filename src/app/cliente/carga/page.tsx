@@ -22,7 +22,7 @@ function parseDocs(value: unknown): string[] {
 export default async function ClienteCargaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ok?: string }>;
+  searchParams: Promise<{ ok?: string; upload_error?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -69,6 +69,11 @@ export default async function ClienteCargaPage({
         {q.ok ? (
           <div className="flash" style={{ marginBottom: "1rem" }}>
             Documentación confirmada. Gracias.
+          </div>
+        ) : null}
+        {q.upload_error ? (
+          <div className="error" style={{ marginBottom: "1rem" }}>
+            El archivo supera 8 MB y no se guardó.
           </div>
         ) : null}
 

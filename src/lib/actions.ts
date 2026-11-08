@@ -6,6 +6,7 @@ import {
   canAccessBusiness,
   getSession,
   hashPassword,
+  passwordIsStrong,
   login as doLogin,
   loginWithAuthCode,
   logout as doLogout,
@@ -16,6 +17,8 @@ import { buildClientInviteEmail } from "./email";
 import { CLIENT_REQUEST_TAB, clientRequestDocs, tabByKey } from "./expediente-tabs";
 import { authCode, id, inviteToken } from "./ids";
 import { resolveFormatFields } from "./resolve-fields";
+
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 async function loadBusinessForUser(user: SessionUser, businessId: string) {
   const rows = await sql<{
@@ -116,13 +119,18 @@ export async function uploadBusinessDocumentAction(businessId: string, formData:
   const docKey = String(formData.get("doc_key") || "");
   const file = formData.get("file");
   const requestId = String(formData.get("request_id") || "") || null;
+  const back =
+    user.role === "cliente"
+      ? `/cliente/carga?tab=${tabKey || CLIENT_REQUEST_TAB}`
+      : `/ejecutivo/negocios/${businessId}?tab=${tabKey || "1"}`;
 
   if (!(file instanceof File) || !tabKey || !docKey) {
-    redirect(
-      user.role === "cliente"
-        ? `/cliente/carga?tab=${tabKey || CLIENT_REQUEST_TAB}`
-        : `/ejecutivo/negocios/${businessId}?tab=${tabKey || "1"}`,
-    );
+    redirect(back);
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (file.size > MAX_UPLOAD_BYTES || buffer.length > MAX_UPLOAD_BYTES) {
+    redirect(`${back}&upload_error=1`);
   }
 
   if (user.role === "cliente" && tabKey !== CLIENT_REQUEST_TAB) {
@@ -132,7 +140,6 @@ export async function uploadBusinessDocumentAction(businessId: string, formData:
   const tab = tabByKey(tabKey);
   const label = tab?.documents.find((d) => d.key === docKey)?.label || docKey;
   const { mockExtract } = await import("./prefill");
-  const buffer = Buffer.from(await file.arrayBuffer());
   const extracted = mockExtract(docKey, file.name);
 
   await sql(
@@ -391,10 +398,11 @@ export async function createUserAction(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase();
   const name = String(formData.get("name") || "").trim();
   const role = String(formData.get("role") || "ejecutivo");
-  const password = String(formData.get("password") || "").trim() || "bim2026";
+  const password = String(formData.get("password") || "").trim();
   const regionId = String(formData.get("region_id") || "") || null;
 
   if (!email || !name) redirect("/admin/usuarios?error=1");
+  if (!passwordIsStrong(password)) redirect("/admin/usuarios?error=password");
   if (role !== "ejecutivo" && role !== "superusuario") redirect("/admin/usuarios?error=1");
 
   await sql(

@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { ensureSeed, sql } from "./db";
 import { sessionToken } from "./ids";
@@ -16,15 +16,39 @@ export type SessionUser = {
 const COOKIE = "bim_session";
 const SESSION_DAYS = 14;
 
-export function hashPassword(password: string): string {
-  return createHash("sha256").update(`bim-demo:${password}`).digest("hex");
+const SCRYPT_N = 16384;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_KEYLEN = 32;
+
+export const MIN_PASSWORD_LENGTH = 12;
+
+export function passwordIsStrong(password: string): boolean {
+  return password.trim().length >= MIN_PASSWORD_LENGTH;
 }
 
-function safeEqual(a: string, b: string): boolean {
-  const ba = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ba.length !== bb.length) return false;
-  return timingSafeEqual(ba, bb);
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  const hash = scryptSync(password, salt, SCRYPT_KEYLEN, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P,
+  });
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString("base64url")}$${hash.toString("base64url")}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const parts = stored.split("$");
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  const n = Number(parts[1]);
+  const r = Number(parts[2]);
+  const p = Number(parts[3]);
+  if (n !== SCRYPT_N || r !== SCRYPT_R || p !== SCRYPT_P) return false;
+  const salt = Buffer.from(parts[4], "base64url");
+  const expected = Buffer.from(parts[5], "base64url");
+  if (salt.length !== 16 || expected.length !== SCRYPT_KEYLEN) return false;
+  const actual = scryptSync(password, salt, SCRYPT_KEYLEN, { N: n, r, p });
+  return timingSafeEqual(actual, expected);
 }
 
 async function createSession(userId: string) {
@@ -59,7 +83,7 @@ export async function login(email: string, password: string): Promise<SessionUse
     [email.trim()],
   );
   const user = rows[0];
-  if (!user || !safeEqual(user.password_hash, hashPassword(password))) return null;
+  if (!user || !verifyPassword(password, user.password_hash)) return null;
   await createSession(user.id);
   return {
     id: user.id,

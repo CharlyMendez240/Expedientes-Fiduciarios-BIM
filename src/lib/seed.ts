@@ -1,28 +1,51 @@
-import { hashPassword } from "./auth";
+import { hashPassword, passwordIsStrong } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
 import { id } from "./ids";
 
-export const DEMO_USERS = [
-  {
-    email: "super@bim.demo",
-    password: "super2026",
-    name: "Superusuario BIM",
-    role: "superusuario" as const,
-  },
-  {
-    email: "ejecutivo@bim.demo",
-    password: "bim2026",
-    name: "Ana López · Ejecutivo Norte",
-    role: "ejecutivo" as const,
-  },
-  {
-    email: "ejecutivo2@bim.demo",
-    password: "bim2026",
-    name: "Luis Pérez · Ejecutivo Norte",
-    role: "ejecutivo" as const,
-  },
-];
+type DemoUser = {
+  email: string;
+  password: string;
+  name: string;
+  role: "superusuario" | "ejecutivo";
+};
+
+function readSecret(name: string): string | null {
+  const value = process.env[name]?.trim() ?? "";
+  if (!passwordIsStrong(value)) return null;
+  return value;
+}
+
+function demoUsers(): DemoUser[] {
+  const superPassword = readSecret("BIM_SUPER_PASSWORD");
+  const ejecutivoPassword = readSecret("BIM_EJECUTIVO_PASSWORD");
+  const users: DemoUser[] = [];
+  if (superPassword) {
+    users.push({
+      email: "super@bim.demo",
+      password: superPassword,
+      name: "Superusuario BIM",
+      role: "superusuario",
+    });
+  }
+  if (ejecutivoPassword) {
+    users.push(
+      {
+        email: "ejecutivo@bim.demo",
+        password: ejecutivoPassword,
+        name: "Ana López · Ejecutivo Norte",
+        role: "ejecutivo",
+      },
+      {
+        email: "ejecutivo2@bim.demo",
+        password: ejecutivoPassword,
+        name: "Luis Pérez · Ejecutivo Norte",
+        role: "ejecutivo",
+      },
+    );
+  }
+  return users;
+}
 
 let seedPromise: Promise<void> | null = null;
 
@@ -37,13 +60,16 @@ export async function seedDemoData() {
 }
 
 async function runSeed() {
-  const existing = await sql<{ email: string }>("select email from users where email = $1", [
-    DEMO_USERS[0].email,
-  ]);
-  if (existing.length) {
-    await ensureFormatTemplates();
-    return;
-  }
+  await ensureFormatTemplates();
+  const users = demoUsers();
+  if (!users.length) return;
+
+  const emails = users.map((user) => user.email);
+  const existing = await sql<{ email: string }>(
+    `select email from users where email in (${emails.map((_, index) => `$${index + 1}`).join(", ")})`,
+    emails,
+  );
+  if (existing.length) return;
 
   const regionNorte = id("reg");
   const regionCentro = id("reg");
@@ -59,7 +85,7 @@ async function runSeed() {
   const regions = await sql<{ id: string; name: string }>("select id, name from regions");
   const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
 
-  for (const u of DEMO_USERS) {
+  for (const u of users) {
     const uid = id("usr");
     await sql(
       `insert into users (id, email, name, role, password_hash, region_id)
@@ -77,7 +103,7 @@ async function runSeed() {
 
   const ej = await sql<{ id: string }>(
     "select id from users where email = $1 limit 1",
-    [DEMO_USERS[1].email],
+    ["ejecutivo@bim.demo"],
   );
   if (!ej[0]) return;
 

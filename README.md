@@ -2,13 +2,15 @@
 
 Portal MVP de originación e integración del expediente digital fiduciario para Banco Inmobiliario Mexicano.
 
-## Usuarios seed
+## Acceso inicial
 
-| Rol | Correo | Contraseña |
+No hay contraseñas en este repositorio. Las cuentas de demostración solo se crean si el entorno define `BIM_SUPER_PASSWORD` y `BIM_EJECUTIVO_PASSWORD`. Cada valor debe tener al menos 12 caracteres y se guarda solo como hash.
+
+| Rol | Correo | Variable |
 | --- | --- | --- |
-| Superusuario | `super@bim.demo` | `super2026` |
-| Ejecutivo Norte | `ejecutivo@bim.demo` | `bim2026` |
-| Ejecutivo Norte 2 | `ejecutivo2@bim.demo` | `bim2026` |
+| Superusuario | `super@bim.demo` | `BIM_SUPER_PASSWORD` |
+| Ejecutivo Norte | `ejecutivo@bim.demo` | `BIM_EJECUTIVO_PASSWORD` |
+| Ejecutivo Norte 2 | `ejecutivo2@bim.demo` | `BIM_EJECUTIVO_PASSWORD` |
 | Cliente | correo + código de 6 dígitos (tras solicitud) | — |
 
 ## Flujo

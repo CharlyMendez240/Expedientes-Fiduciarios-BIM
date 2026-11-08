@@ -29,7 +29,7 @@ export default async function NegocioDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; invite_error?: string; forms?: string }>;
+  searchParams: Promise<{ tab?: string; invite_error?: string; forms?: string; upload_error?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -96,6 +96,12 @@ export default async function NegocioDetailPage({
             Expediente
           </span>
         </div>
+
+        {q.upload_error ? (
+          <div className="error" style={{ marginBottom: "1rem" }}>
+            El archivo supera 8 MB y no se guardó.
+          </div>
+        ) : null}
 
         <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
           <div>

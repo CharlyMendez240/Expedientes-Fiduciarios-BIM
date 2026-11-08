@@ -12,14 +12,9 @@ npm run dev
 
 Abrir http://127.0.0.1:3000
 
-## Usuarios seed
+## Acceso inicial
 
-| Rol | Correo | Contraseña |
-| --- | --- | --- |
-| Superusuario | `super@bim.demo` | `super2026` |
-| Ejecutivo Norte | `ejecutivo@bim.demo` | `bim2026` |
-| Ejecutivo Norte 2 | `ejecutivo2@bim.demo` | `bim2026` |
-| Cliente | correo + código de 6 dígitos (tras solicitud) | — |
+No hay contraseñas en este repositorio. Las cuentas de demostración solo se crean si el entorno define `BIM_SUPER_PASSWORD` y `BIM_EJECUTIVO_PASSWORD` (mínimo 12 caracteres). En Postgres se guarda el hash, no la contraseña.
 
 ## Publish-app
 

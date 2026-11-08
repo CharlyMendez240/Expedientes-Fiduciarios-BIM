@@ -40,7 +40,11 @@ export default async function AdminUsuariosPage({
           Ejecutivos de la misma región pueden atender los mismos negocios y solicitudes.
         </p>
         {q.ok ? <div className="flash">Usuario creado.</div> : null}
-        {q.error ? <div className="error">Complete los datos requeridos.</div> : null}
+        {q.error === "password" ? (
+          <div className="error">La contraseña debe tener al menos 12 caracteres.</div>
+        ) : q.error ? (
+          <div className="error">Complete los datos requeridos.</div>
+        ) : null}
 
         <div className="grid-2" style={{ marginTop: "1rem" }}>
           <section className="panel stack">
@@ -56,7 +60,7 @@ export default async function AdminUsuariosPage({
               </div>
               <div>
                 <label htmlFor="password">Contraseña temporal</label>
-                <input id="password" name="password" defaultValue="bim2026" />
+                <input id="password" name="password" type="password" required minLength={12} autoComplete="new-password" />
               </div>
               <div>
                 <label htmlFor="role">Rol</label>

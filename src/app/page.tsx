@@ -56,7 +56,7 @@ export default async function HomePage({
         </form>
 
         <p className="muted" style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
-          Credenciales de demo: ver README del repositorio.
+          El administrador configura el acceso. Esta aplicación no incluye contraseñas.
         </p>
         <p style={{ marginTop: "0.75rem" }}>
           <Link className="btn btn-secondary" href="/cliente/acceso">
