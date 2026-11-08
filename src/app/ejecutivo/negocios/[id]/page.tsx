@@ -258,6 +258,9 @@ export default async function NegocioDetailPage({
                   >
                     <input type="hidden" name="tab_key" value={activeTab} />
                     <input type="hidden" name="doc_key" value={doc.key} />
+                    {uploaded?.request_id ? (
+                      <input type="hidden" name="request_id" value={uploaded.request_id} />
+                    ) : null}
                     <input type="file" name="file" required />
                     <button className="btn btn-secondary" type="submit">
                       {uploaded ? "Sustituir desde el ordenador" : "Cargar desde el ordenador"}

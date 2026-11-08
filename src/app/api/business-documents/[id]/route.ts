@@ -18,8 +18,9 @@ export async function GET(
     ejecutivo_id: string;
     region_id: string | null;
     business_id: string;
+    request_id: string | null;
   }>(
-    `select d.content_base64, d.file_name, d.mime_type, b.ejecutivo_id, b.region_id, d.business_id
+    `select d.content_base64, d.file_name, d.mime_type, b.ejecutivo_id, b.region_id, d.business_id, d.request_id
      from business_documents d
      join businesses b on b.id = d.business_id
      where d.id = $1`,
@@ -28,15 +29,16 @@ export async function GET(
   const row = rows[0];
   if (!row) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  if (user.role !== "cliente" && !(await canAccessBusiness(user, row))) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-  }
   if (user.role === "cliente") {
     const owned = await sql<{ id: string }>(
-      "select id from requests where business_id = $1 and cliente_user_id = $2 limit 1",
-      [row.business_id, user.id],
+      row.request_id
+        ? "select id from requests where id = $1 and business_id = $2 and cliente_user_id = $3"
+        : "select id from requests where business_id = $1 and cliente_user_id = $2 limit 1",
+      row.request_id ? [row.request_id, row.business_id, user.id] : [row.business_id, user.id],
     );
     if (!owned[0]) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  } else if (!(await canAccessBusiness(user, row))) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
   return new NextResponse(Buffer.from(row.content_base64, "base64"), {

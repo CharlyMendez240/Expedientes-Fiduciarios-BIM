@@ -88,41 +88,63 @@ export async function createBusinessAction(formData: FormData) {
   redirect(`/ejecutivo/negocios/${businessId}?tab=1`);
 }
 
+function requestedDocKeys(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export async function uploadBusinessDocumentAction(businessId: string, formData: FormData) {
   await ensureSeed();
   const user = await getSession();
   if (!user) redirect("/");
 
-  const business = await loadBusinessForUser(
+  const tabKey = String(formData.get("tab_key") || "");
+  const docKey = String(formData.get("doc_key") || "");
+  const file = formData.get("file");
+  const submittedRequestId = String(formData.get("request_id") || "").trim();
+  const back =
     user.role === "cliente"
-      ? { ...user, role: "ejecutivo", region_id: null }
-      : user,
-    businessId,
-  ).catch(() => null);
+      ? `/cliente/carga?tab=${tabKey || CLIENT_REQUEST_TAB}`
+      : `/ejecutivo/negocios/${businessId}?tab=${tabKey || "1"}`;
 
-  // cliente: verificar ownership por request
+  let requestId: string | null = null;
   if (user.role === "cliente") {
+    if (!submittedRequestId || tabKey !== CLIENT_REQUEST_TAB) redirect("/cliente/carga");
     const owned = await sql<{ id: string; requested_docs: unknown }>(
-      `select id, requested_docs from requests where business_id = $1 and cliente_user_id = $2 limit 1`,
-      [businessId, user.id],
+      `select id, requested_docs from requests
+       where id = $1 and business_id = $2 and cliente_user_id = $3`,
+      [submittedRequestId, businessId, user.id],
     );
-    if (!owned[0]) redirect("/cliente");
-  } else {
+    const request = owned[0];
+    if (!request || !requestedDocKeys(request.requested_docs).includes(docKey)) {
+      redirect("/cliente/carga");
+    }
+    requestId = request.id;
+  } else if (user.role === "ejecutivo" || user.role === "superusuario") {
     const biz = await sql<{ ejecutivo_id: string; region_id: string | null }>(
       "select ejecutivo_id, region_id from businesses where id = $1",
       [businessId],
     );
     if (!biz[0] || !(await canAccessBusiness(user, biz[0]))) redirect("/ejecutivo");
+    if (submittedRequestId) {
+      const linked = await sql<{ id: string }>(
+        "select id from requests where id = $1 and business_id = $2",
+        [submittedRequestId, businessId],
+      );
+      if (!linked[0]) redirect(back);
+      requestId = linked[0].id;
+    }
+  } else {
+    redirect("/");
   }
-
-  const tabKey = String(formData.get("tab_key") || "");
-  const docKey = String(formData.get("doc_key") || "");
-  const file = formData.get("file");
-  const requestId = String(formData.get("request_id") || "") || null;
-  const back =
-    user.role === "cliente"
-      ? `/cliente/carga?tab=${tabKey || CLIENT_REQUEST_TAB}`
-      : `/ejecutivo/negocios/${businessId}?tab=${tabKey || "1"}`;
 
   if (!(file instanceof File) || !tabKey || !docKey) {
     redirect(back);
@@ -172,7 +194,6 @@ export async function uploadBusinessDocumentAction(businessId: string, formData:
     );
   }
 
-  void business;
   const dest =
     user.role === "cliente"
       ? `/cliente/carga?tab=${tabKey}`
