@@ -1,4 +1,4 @@
-import { hashPassword, passwordIsStrong } from "./auth";
+import { hashPassword, passwordIsStrong, verifyPassword } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
 import { id } from "./ids";
@@ -69,7 +69,21 @@ async function runSeed() {
     `select email from users where email in (${emails.map((_, index) => `$${index + 1}`).join(", ")})`,
     emails,
   );
-  if (existing.length) return;
+  if (existing.length) {
+    for (const user of users) {
+      const stored = await sql<{ password_hash: string }>(
+        "select password_hash from users where email = $1",
+        [user.email],
+      );
+      if (stored[0] && !verifyPassword(user.password, stored[0].password_hash)) {
+        await sql("update users set password_hash = $1 where email = $2", [
+          hashPassword(user.password),
+          user.email,
+        ]);
+      }
+    }
+    return;
+  }
 
   const regionNorte = id("reg");
   const regionCentro = id("reg");

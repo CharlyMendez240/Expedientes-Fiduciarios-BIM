@@ -23,7 +23,6 @@ const SCRYPT_KEYLEN = 32;
 
 export const MIN_PASSWORD_LENGTH = 12;
 const MAX_LOGIN_FAILURES = 5;
-const LOGIN_LOCK_MS = 15 * 60 * 1000;
 
 export type LoginResult =
   | { ok: true; user: SessionUser }
@@ -35,51 +34,88 @@ function subjectOf(email: string): string {
   return email.trim().toLowerCase().slice(0, 200);
 }
 
+let attemptsReady: Promise<void> | null = null;
+
+function ensureAttemptsTable(): Promise<void> {
+  if (!attemptsReady) {
+    attemptsReady = sql(
+      `create table if not exists login_attempts (
+         subject text not null,
+         channel text not null check (channel in ('password', 'code')),
+         failures integer not null default 0,
+         locked_until timestamptz,
+         updated_at timestamptz not null default now(),
+         primary key (subject, channel)
+       )`,
+    )
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        attemptsReady = null;
+        throw error;
+      });
+  }
+  return attemptsReady;
+}
+
 async function gateAttempt(subject: string, channel: AttemptChannel): Promise<"ok" | "locked"> {
-  const rows = await sql<{ locked_until: string | null }>(
-    "select locked_until from login_attempts where subject = $1 and channel = $2",
-    [subject, channel],
-  );
-  const lockedUntil = rows[0]?.locked_until;
-  if (!lockedUntil) return "ok";
-  if (new Date(lockedUntil).getTime() > Date.now()) return "locked";
-  await sql(
-    "update login_attempts set failures = 0, locked_until = null, updated_at = now() where subject = $1 and channel = $2",
-    [subject, channel],
-  );
-  return "ok";
+  try {
+    await ensureAttemptsTable();
+    const rows = await sql<{ locked_until: string | null }>(
+      "select locked_until from login_attempts where subject = $1 and channel = $2",
+      [subject, channel],
+    );
+    const lockedUntil = rows[0]?.locked_until;
+    if (!lockedUntil) return "ok";
+    if (new Date(lockedUntil).getTime() > Date.now()) return "locked";
+    await sql(
+      "update login_attempts set failures = 0, locked_until = null, updated_at = now() where subject = $1 and channel = $2",
+      [subject, channel],
+    );
+    return "ok";
+  } catch {
+    return "ok";
+  }
 }
 
 async function registerFailure(subject: string, channel: AttemptChannel): Promise<"invalid" | "locked"> {
-  const lockedUntil = new Date(Date.now() + LOGIN_LOCK_MS).toISOString();
-  const rows = await sql<{ failures: number }>(
-    `insert into login_attempts (subject, channel, failures, locked_until, updated_at)
-     values ($1, $2, 1, null, now())
-     on conflict (subject, channel) do update
-     set failures = login_attempts.failures + 1,
-         locked_until = case
-           when login_attempts.failures + 1 >= $3 then $4::timestamptz
-           else null
-         end,
-         updated_at = now()
-     returning failures`,
-    [subject, channel, MAX_LOGIN_FAILURES, lockedUntil],
-  );
-  const failures = Number(rows[0]?.failures ?? 1);
-  if (channel === "code" && failures >= MAX_LOGIN_FAILURES) {
-    await sql(
-      "update requests set auth_code = null, auth_code_expires = null where lower(cliente_email) = lower($1) and auth_code is not null",
-      [subject],
+  try {
+    await ensureAttemptsTable();
+    const rows = await sql<{ failures: number }>(
+      `insert into login_attempts (subject, channel, failures, locked_until, updated_at)
+       values ($1, $2, 1, null, now())
+       on conflict (subject, channel) do update
+       set failures = login_attempts.failures + 1,
+           locked_until = case
+             when login_attempts.failures + 1 >= $3 then now() + interval '15 minutes'
+             else null
+           end,
+           updated_at = now()
+       returning failures`,
+      [subject, channel, MAX_LOGIN_FAILURES],
     );
+    const failures = Number(rows[0]?.failures ?? 1);
+    if (channel === "code" && failures >= MAX_LOGIN_FAILURES) {
+      await sql(
+        "update requests set auth_code = null, auth_code_expires = null where lower(cliente_email) = lower($1) and auth_code is not null",
+        [subject],
+      );
+    }
+    return failures >= MAX_LOGIN_FAILURES ? "locked" : "invalid";
+  } catch {
+    return "invalid";
   }
-  return failures >= MAX_LOGIN_FAILURES ? "locked" : "invalid";
 }
 
 async function registerSuccess(subject: string, channel: AttemptChannel) {
-  await sql(
-    "update login_attempts set failures = 0, locked_until = null, updated_at = now() where subject = $1 and channel = $2",
-    [subject, channel],
-  );
+  try {
+    await ensureAttemptsTable();
+    await sql(
+      "update login_attempts set failures = 0, locked_until = null, updated_at = now() where subject = $1 and channel = $2",
+      [subject, channel],
+    );
+  } catch {
+    return;
+  }
 }
 
 export function passwordIsStrong(password: string): boolean {
