@@ -1,0 +1,152 @@
+import { hashPassword } from "./auth";
+import { sql } from "./db";
+import { FORMAT_CATALOG } from "./format-catalog";
+import { id } from "./ids";
+
+export const DEMO_USERS = [
+  {
+    email: "super@bim.demo",
+    password: "super2026",
+    name: "Superusuario BIM",
+    role: "superusuario" as const,
+  },
+  {
+    email: "ejecutivo@bim.demo",
+    password: "bim2026",
+    name: "Ana López · Ejecutivo Norte",
+    role: "ejecutivo" as const,
+  },
+  {
+    email: "ejecutivo2@bim.demo",
+    password: "bim2026",
+    name: "Luis Pérez · Ejecutivo Norte",
+    role: "ejecutivo" as const,
+  },
+];
+
+let seedPromise: Promise<void> | null = null;
+
+export async function seedDemoData() {
+  if (!seedPromise) {
+    seedPromise = runSeed().catch((error) => {
+      seedPromise = null;
+      throw error;
+    });
+  }
+  await seedPromise;
+}
+
+async function runSeed() {
+  const existing = await sql<{ email: string }>("select email from users where email = $1", [
+    DEMO_USERS[0].email,
+  ]);
+  if (existing.length) {
+    await ensureFormatTemplates();
+    return;
+  }
+
+  const regionNorte = id("reg");
+  const regionCentro = id("reg");
+  await sql("insert into regions (id, name) values ($1,$2) on conflict (name) do nothing", [
+    regionNorte,
+    "Norte",
+  ]);
+  await sql("insert into regions (id, name) values ($1,$2) on conflict (name) do nothing", [
+    regionCentro,
+    "Centro",
+  ]);
+
+  const regions = await sql<{ id: string; name: string }>("select id, name from regions");
+  const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
+
+  for (const u of DEMO_USERS) {
+    const uid = id("usr");
+    await sql(
+      `insert into users (id, email, name, role, password_hash, region_id)
+       values ($1,$2,$3,$4,$5,$6) on conflict (email) do nothing`,
+      [
+        uid,
+        u.email,
+        u.name,
+        u.role,
+        hashPassword(u.password),
+        u.role === "ejecutivo" ? norte : null,
+      ],
+    );
+  }
+
+  const ej = await sql<{ id: string }>(
+    "select id from users where email = $1 limit 1",
+    [DEMO_USERS[1].email],
+  );
+  if (!ej[0]) return;
+
+  const bizCount = await sql<{ c: string }>("select count(*)::text as c from businesses");
+  if (Number(bizCount[0]?.c || 0) === 0) {
+    const businessId = id("neg");
+    await sql(
+      `insert into businesses (
+        id, folio, nombre, tipo_contrato, credito_bim, descripcion,
+        patrimonio_tipo, patrimonio_valor, patrimonio_desc,
+        honorarios_aceptacion, honorarios_admin, fines,
+        ejecutivo_id, formatos, status, region_id
+      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16)
+      on conflict (folio) do nothing`,
+      [
+        businessId,
+        "FIDE-2026-0142",
+        "Fideicomiso Desarrollo Residencial Valle Alto",
+        "Fideicomiso",
+        true,
+        "Negocio demo de originación fiduciaria con crédito BIM.",
+        "Inmueble",
+        "$48,500,000 MXN",
+        "Terreno habitacional 12,400 m² en Monterrey, N.L.",
+        "$75,000",
+        "$18,000 mensuales",
+        "Administración y garantía de desarrollo inmobiliario",
+        ej[0].id,
+        JSON.stringify(["alta_checklist", "caratula_ofid", "kyc_pf", "aviso_privacidad"]),
+        "en_proceso",
+        norte,
+      ],
+    );
+  }
+
+  await ensureFormatTemplates();
+}
+
+async function ensureFormatTemplates() {
+  for (const fmt of FORMAT_CATALOG) {
+    const existing = await sql<{ id: string }>(
+      "select id from format_templates where format_key = $1",
+      [fmt.key],
+    );
+    let templateId = existing[0]?.id;
+    if (!templateId) {
+      templateId = id("fmt");
+      await sql(
+        `insert into format_templates (id, format_key, title, code, description)
+         values ($1,$2,$3,$4,$5)`,
+        [templateId, fmt.key, fmt.title, fmt.code, "Parametrización demo"],
+      );
+    }
+    for (let i = 0; i < fmt.fields.length; i++) {
+      const f = fmt.fields[i];
+      await sql(
+        `insert into format_fields (id, template_id, field_key, label, source_type, source_path, sort_order)
+         values ($1,$2,$3,$4,$5,$6,$7)
+         on conflict (template_id, field_key) do nothing`,
+        [id("fld"), templateId, f.field_key, f.label, f.source_type, f.source_path, i],
+      );
+    }
+  }
+}
+
+export async function getLatestDemoEmail(): Promise<{ email: string; code: string } | null> {
+  const rows = await sql<{ to_email: string; auth_code: string }>(
+    "select to_email, auth_code from outbound_emails order by created_at desc limit 1",
+  );
+  if (!rows[0]) return null;
+  return { email: rows[0].to_email, code: rows[0].auth_code };
+}
