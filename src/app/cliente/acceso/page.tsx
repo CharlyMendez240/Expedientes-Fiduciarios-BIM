@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { BimLogo } from "@/components/BimLogo";
 import { loginWithCodeAction } from "@/lib/actions";
 import { getSession } from "@/lib/auth";
-import { ensureSeed, sql } from "@/lib/db";
+import { ensureSeed } from "@/lib/db";
 
 export default async function ClienteAccesoPage({
   searchParams,
@@ -16,9 +16,6 @@ export default async function ClienteAccesoPage({
   if (user?.role === "ejecutivo") redirect("/ejecutivo");
 
   const q = await searchParams;
-  const latest = await sql<{ to_email: string; auth_code: string; to_name: string }>(
-    "select to_email, auth_code, to_name from outbound_emails order by created_at desc limit 1",
-  );
 
   return (
     <main className="hero-login">
@@ -45,7 +42,8 @@ export default async function ClienteAccesoPage({
               name="email"
               type="email"
               required
-              defaultValue={q.email || latest[0]?.to_email || ""}
+              autoComplete="email"
+              defaultValue={q.email || ""}
             />
           </div>
           <div>
@@ -58,22 +56,13 @@ export default async function ClienteAccesoPage({
               maxLength={6}
               required
               placeholder="000000"
-              defaultValue={latest[0]?.auth_code || ""}
+              autoComplete="one-time-code"
             />
           </div>
           <button className="btn btn-primary" type="submit">
             Entrar al portal
           </button>
         </form>
-        {latest[0] ? (
-          <div className="panel" style={{ marginTop: "1.25rem" }}>
-            <strong style={{ color: "var(--bim-brand)" }}>Último correo demo</strong>
-            <p className="muted" style={{ marginBottom: 0 }}>
-              {latest[0].to_name} · {latest[0].to_email} · código{" "}
-              <code>{latest[0].auth_code}</code>
-            </p>
-          </div>
-        ) : null}
         <p style={{ marginTop: "1.25rem" }}>
           <Link href="/" className="muted">
             ← Volver al inicio

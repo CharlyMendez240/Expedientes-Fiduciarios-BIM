@@ -143,10 +143,3 @@ async function ensureFormatTemplates() {
   }
 }
 
-export async function getLatestDemoEmail(): Promise<{ email: string; code: string } | null> {
-  const rows = await sql<{ to_email: string; auth_code: string }>(
-    "select to_email, auth_code from outbound_emails order by created_at desc limit 1",
-  );
-  if (!rows[0]) return null;
-  return { email: rows[0].to_email, code: rows[0].auth_code };
-}

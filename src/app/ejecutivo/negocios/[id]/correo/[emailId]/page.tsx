@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
-import { getSession } from "@/lib/auth";
+import { canAccessBusiness, getSession } from "@/lib/auth";
 import { ensureSeed, sql } from "@/lib/db";
 
 export default async function CorreoEnviadoPage({
@@ -11,8 +11,17 @@ export default async function CorreoEnviadoPage({
 }) {
   await ensureSeed();
   const user = await getSession();
-  if (!user || user.role !== "ejecutivo") redirect("/");
+  if (!user || (user.role !== "ejecutivo" && user.role !== "superusuario")) redirect("/");
   const { id, emailId } = await params;
+
+  const businesses = await sql<{ ejecutivo_id: string; region_id: string | null }>(
+    "select ejecutivo_id, region_id from businesses where id = $1",
+    [id],
+  );
+  const business = businesses[0];
+  if (!business || !(await canAccessBusiness(user, business))) {
+    redirect("/ejecutivo");
+  }
 
   const rows = await sql<{
     to_email: string;

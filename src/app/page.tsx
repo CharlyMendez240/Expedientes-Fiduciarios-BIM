@@ -4,7 +4,6 @@ import { BimLogo } from "@/components/BimLogo";
 import { loginAction } from "@/lib/actions";
 import { getSession } from "@/lib/auth";
 import { ensureSeed } from "@/lib/db";
-import { DEMO_USERS, getLatestDemoEmail } from "@/lib/seed";
 
 export default async function HomePage({
   searchParams,
@@ -18,7 +17,6 @@ export default async function HomePage({
   if (user?.role === "cliente") redirect("/cliente/carga");
 
   const params = await searchParams;
-  const demoMail = await getLatestDemoEmail();
 
   return (
     <main className="hero-login">
@@ -40,7 +38,7 @@ export default async function HomePage({
         <form action={loginAction} className="stack" style={{ marginTop: "1rem" }}>
           <div>
             <label htmlFor="email">Correo</label>
-            <input id="email" name="email" type="email" defaultValue={DEMO_USERS[1].email} required />
+            <input id="email" name="email" type="email" required autoComplete="username" />
           </div>
           <div>
             <label htmlFor="password">Contraseña</label>
@@ -48,8 +46,8 @@ export default async function HomePage({
               id="password"
               name="password"
               type="password"
-              defaultValue={DEMO_USERS[1].password}
               required
+              autoComplete="current-password"
             />
           </div>
           <button className="btn btn-primary" type="submit">
@@ -57,29 +55,14 @@ export default async function HomePage({
           </button>
         </form>
 
-        <div className="panel" style={{ marginTop: "1.25rem" }}>
-          <strong style={{ color: "var(--bim-brand)" }}>Usuarios demo</strong>
-          <ul className="muted" style={{ margin: "0.6rem 0 0.85rem", paddingLeft: "1.1rem", lineHeight: 1.55 }}>
-            <li>
-              Superusuario: <code>{DEMO_USERS[0].email}</code> / <code>{DEMO_USERS[0].password}</code>
-            </li>
-            <li>
-              Ejecutivo Norte: <code>{DEMO_USERS[1].email}</code> / <code>{DEMO_USERS[1].password}</code>
-            </li>
-            <li>
-              Ejecutivo Norte 2: <code>{DEMO_USERS[2].email}</code> / <code>{DEMO_USERS[2].password}</code>
-            </li>
-            <li>Cliente: correo + código (tras solicitud)</li>
-          </ul>
+        <p className="muted" style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
+          Credenciales de demo: ver README del repositorio.
+        </p>
+        <p style={{ marginTop: "0.75rem" }}>
           <Link className="btn btn-secondary" href="/cliente/acceso">
             Acceso cliente con código
           </Link>
-          {demoMail ? (
-            <p className="muted" style={{ marginBottom: 0, marginTop: "0.75rem", fontSize: "0.85rem" }}>
-              Último correo: {demoMail.email} · <code>{demoMail.code}</code>
-            </p>
-          ) : null}
-        </div>
+        </p>
       </section>
     </main>
   );
