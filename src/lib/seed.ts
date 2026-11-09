@@ -40,11 +40,59 @@ function demoUsers(): DemoUser[] {
     users.push({
       email: ejecutivoEmail,
       password: ejecutivoPassword,
-      name: "Ejecutivo",
+      name: "Ejecutivo Norte",
+      role: "ejecutivo",
+    });
+  }
+  const secondPassword = readSecret("BIM_EJECUTIVO2_PASSWORD");
+  const secondEmail = readEmail("BIM_EJECUTIVO2_EMAIL");
+  const used = new Set(users.map((user) => user.email));
+  if (secondPassword && secondEmail && !used.has(secondEmail)) {
+    users.push({
+      email: secondEmail,
+      password: secondPassword,
+      name: "Ejecutivo Norte 2",
       role: "ejecutivo",
     });
   }
   return users;
+}
+
+const STAFF_ROTATION = "ensayo-3";
+
+async function replaceStaffOnce(keepIds: string[], ejecutivoId: string) {
+  if ((process.env.BIM_REPLACE_STAFF?.trim() ?? "") !== STAFF_ROTATION) return;
+  if (keepIds.length < 3 || !ejecutivoId) return;
+  await sql(
+    `create table if not exists bim_flags (
+       key text primary key,
+       value text not null,
+       updated_at timestamptz not null default now()
+     )`,
+  );
+  await sql(
+    "alter table bim_flags add column if not exists updated_at timestamptz not null default now()",
+  );
+  const done = await sql<{ value: string }>("select value from bim_flags where key = 'staff_rotation'");
+  if (done[0]?.value === STAFF_ROTATION) return;
+
+  const userSlots = keepIds.map((_, index) => `$${index + 1}`).join(", ");
+  const businessSlots = keepIds.map((_, index) => `$${index + 2}`).join(", ");
+  await sql(
+    `update businesses set ejecutivo_id = $1 where ejecutivo_id not in (${businessSlots})`,
+    [ejecutivoId, ...keepIds],
+  );
+  await sql(
+    `update requests set cliente_user_id = null
+     where cliente_user_id is not null and cliente_user_id not in (${userSlots})`,
+    keepIds,
+  );
+  await sql(`delete from users where id not in (${userSlots})`, keepIds);
+  await sql(
+    `insert into bim_flags (key, value) values ('staff_rotation', $1)
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    [STAFF_ROTATION],
+  );
 }
 
 let seedPromise: Promise<void> | null = null;
@@ -78,6 +126,7 @@ async function runSeed() {
   const regions = await sql<{ id: string; name: string }>("select id, name from regions");
   const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
 
+  const keepIds: string[] = [];
   let ejecutivoId = "";
   for (const u of users) {
     const regionId = u.role === "ejecutivo" ? norte : null;
@@ -102,9 +151,11 @@ async function runSeed() {
         [userId, u.email, u.name, u.role, hashPassword(u.password), regionId],
       );
     }
-    if (u.role === "ejecutivo") ejecutivoId = userId;
+    keepIds.push(userId);
+    if (u.role === "ejecutivo" && !ejecutivoId) ejecutivoId = userId;
   }
 
+  await replaceStaffOnce(keepIds, ejecutivoId);
   if (!ejecutivoId) return;
 
   const bizCount = await sql<{ c: string }>("select count(*)::text as c from businesses");
