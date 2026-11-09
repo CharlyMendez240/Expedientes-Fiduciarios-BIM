@@ -39,10 +39,9 @@ async function loadBusinessForUser(user: SessionUser, businessId: string) {
   return business;
 }
 
-function serverErrorPath(error: unknown, base: string): string {
-  const code = pgCode(error);
+function serverErrorPath(base: string): string {
   const join = base.includes("?") ? "&" : "?";
-  return code ? `${base}${join}error=server&code=${code}` : `${base}${join}error=server`;
+  return `${base}${join}error=server`;
 }
 
 async function rememberSession(token: string) {
@@ -58,7 +57,7 @@ export async function loginAction(formData: FormData) {
     result = await doLogin(email, password);
   } catch (error) {
     console.error("login", pgCode(error) || "error");
-    redirect(serverErrorPath(error, "/"));
+    redirect(serverErrorPath("/"));
   }
   if (!result.ok) redirect(result.reason === "locked" ? "/?error=locked" : "/?error=1");
   try {
@@ -337,7 +336,7 @@ export async function loginWithCodeAction(formData: FormData) {
     result = await loginWithAuthCode(email, code);
   } catch (error) {
     console.error("login", pgCode(error) || "error");
-    redirect(serverErrorPath(error, "/cliente/acceso"));
+    redirect(serverErrorPath("/cliente/acceso"));
   }
   if (!result.ok) {
     const params = new URLSearchParams({ error: result.reason === "locked" ? "locked" : "1" });

@@ -7,7 +7,7 @@ import { ensureSeed } from "@/lib/db";
 export default async function ClienteAccesoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string; error?: string; code?: string }>;
+  searchParams: Promise<{ email?: string; error?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -33,10 +33,7 @@ export default async function ClienteAccesoPage({
         {q.error === "locked" ? (
           <div className="error">Demasiados intentos. Espere 15 minutos y pida un código nuevo.</div>
         ) : q.error === "server" ? (
-          <div className="error">
-            No se pudo iniciar sesión por un error del servidor. Intente de nuevo.
-            {/^[0-9A-Z]{5}$/.test(q.code || "") ? ` (${q.code})` : ""}
-          </div>
+          <div className="error">No se pudo iniciar sesión por un error del servidor. Intente de nuevo.</div>
         ) : q.error ? (
           <div className="error">Correo o código incorrectos, o el código expiró.</div>
         ) : null}

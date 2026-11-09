@@ -24,6 +24,24 @@ export function buildClientInviteEmail(opts: {
   return { subject, body_html };
 }
 
+export function buildPasswordResetEmail(link: string) {
+  const safeLink = escapeHtml(link);
+  const subject = "Restablecer contraseña — Expedientes Digitales";
+  const body_html = `
+    <div style="font-family:Montserrat,Segoe UI,sans-serif;color:#1a2e30;line-height:1.5">
+      <p>Recibimos una solicitud para cambiar la contraseña de esta cuenta.</p>
+      <p>El enlace vence en 30 minutos y solo puede usarse una vez.</p>
+      <p>
+        <a href="${safeLink}" style="display:inline-block;background:#009c3c;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:700">
+          Elegir una contraseña nueva
+        </a>
+      </p>
+      <p style="color:#5c7375;font-size:13px">Si usted no solicitó el cambio, ignore este mensaje.</p>
+    </div>
+  `;
+  return { subject, body_html };
+}
+
 export const INVITE_CODE_COOKIE = "bim_invite_once";
 
 export function readInviteCode(emailId: string, cookieValue: string | undefined): string {

@@ -55,6 +55,19 @@ const RUNTIME_SCHEMA = [
      updated_at timestamptz not null default now(),
      primary key (subject, channel)
    )`,
+  `create table if not exists bim_flags (
+     key text primary key,
+     value text not null,
+     updated_at timestamptz not null default now()
+   )`,
+  "alter table bim_flags add column if not exists updated_at timestamptz not null default now()",
+  `create table if not exists password_resets (
+     id text primary key,
+     user_id text not null references users(id) on delete cascade,
+     token_hash text not null unique,
+     expires_at timestamptz not null,
+     created_at timestamptz not null default now()
+   )`,
 ];
 
 const globalSchema = globalThis as unknown as { bimSchema?: Promise<void> | null };

@@ -7,7 +7,7 @@ import { ensureSeed } from "@/lib/db";
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; code?: string; listo?: string }>;
+  searchParams: Promise<{ error?: string; listo?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -33,10 +33,7 @@ export default async function HomePage({
         {params.error === "locked" ? (
           <div className="error">Demasiados intentos. Espere 15 minutos e intente de nuevo.</div>
         ) : params.error === "server" ? (
-          <div className="error">
-            No se pudo iniciar sesión por un error del servidor. Intente de nuevo.
-            {/^[0-9A-Z]{5}$/.test(params.code || "") ? ` (${params.code})` : ""}
-          </div>
+          <div className="error">No se pudo iniciar sesión por un error del servidor. Intente de nuevo.</div>
         ) : params.error ? (
           <div className="error">Credenciales incorrectas. Revise usuario y contraseña.</div>
         ) : params.listo ? (
@@ -67,7 +64,7 @@ export default async function HomePage({
           <Link href="/restablecer">Restablecer contraseña</Link>
         </p>
         <p className="muted" style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
-          El cliente entra con el código del correo. El ejecutivo puede definir una contraseña nueva.
+          El cliente entra con el código del correo. Para cambiar la contraseña, el enlace llega al correo de la cuenta.
         </p>
         <p style={{ marginTop: "0.75rem" }}>
           <Link className="btn btn-secondary" href="/cliente/acceso">

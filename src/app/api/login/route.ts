@@ -23,8 +23,7 @@ export async function POST(request: Request) {
     }
     return redirectWithSession(request, staffPath(result.user.role), result.token);
   } catch (error) {
-    const code = pgCode(error);
-    console.error("login", code || "error");
-    return redirectWithSession(request, code ? `/?error=server&code=${code}` : "/?error=server");
+    console.error("login", pgCode(error) || "error");
+    return redirectWithSession(request, "/?error=server");
   }
 }

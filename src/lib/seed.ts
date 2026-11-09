@@ -1,4 +1,4 @@
-import { hashPassword, passwordIsStrong } from "./auth";
+import { hashPassword, passwordIsStrong, verifyPassword } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
 import { id } from "./ids";
@@ -27,33 +27,72 @@ function demoUsers(): DemoUser[] {
   const superEmail = readEmail("BIM_SUPER_EMAIL");
   const ejecutivoPassword = readSecret("BIM_EJECUTIVO_PASSWORD");
   const ejecutivoEmail = readEmail("BIM_EJECUTIVO_EMAIL");
-  const ejecutivo2Email = readEmail("BIM_EJECUTIVO2_EMAIL");
   const users: DemoUser[] = [];
   if (superPassword && superEmail) {
     users.push({
       email: superEmail,
       password: superPassword,
-      name: "Superusuario BIM",
+      name: "Superusuario",
       role: "superusuario",
     });
   }
-  if (ejecutivoPassword && ejecutivoEmail) {
+  if (ejecutivoPassword && ejecutivoEmail && ejecutivoEmail !== superEmail) {
     users.push({
       email: ejecutivoEmail,
       password: ejecutivoPassword,
-      name: "Ejecutivo de prueba",
+      name: "Ejecutivo Norte",
       role: "ejecutivo",
     });
   }
-  if (ejecutivoPassword && ejecutivo2Email && ejecutivo2Email !== ejecutivoEmail) {
+  const secondPassword = readSecret("BIM_EJECUTIVO2_PASSWORD");
+  const secondEmail = readEmail("BIM_EJECUTIVO2_EMAIL");
+  const used = new Set(users.map((user) => user.email));
+  if (secondPassword && secondEmail && !used.has(secondEmail)) {
     users.push({
-      email: ejecutivo2Email,
-      password: ejecutivoPassword,
-      name: "Ejecutivo de prueba 2",
+      email: secondEmail,
+      password: secondPassword,
+      name: "Ejecutivo Norte 2",
       role: "ejecutivo",
     });
   }
   return users;
+}
+
+const STAFF_ROTATION = "ensayo-3";
+
+async function replaceStaffOnce(keepIds: string[], ejecutivoId: string) {
+  if ((process.env.BIM_REPLACE_STAFF?.trim() ?? "") !== STAFF_ROTATION) return;
+  if (keepIds.length < 3 || !ejecutivoId) return;
+  await sql(
+    `create table if not exists bim_flags (
+       key text primary key,
+       value text not null,
+       updated_at timestamptz not null default now()
+     )`,
+  );
+  await sql(
+    "alter table bim_flags add column if not exists updated_at timestamptz not null default now()",
+  );
+  const done = await sql<{ value: string }>("select value from bim_flags where key = 'staff_rotation'");
+  if (done[0]?.value === STAFF_ROTATION) return;
+
+  const userSlots = keepIds.map((_, index) => `$${index + 1}`).join(", ");
+  const businessSlots = keepIds.map((_, index) => `$${index + 2}`).join(", ");
+  await sql(
+    `update businesses set ejecutivo_id = $1 where ejecutivo_id not in (${businessSlots})`,
+    [ejecutivoId, ...keepIds],
+  );
+  await sql(
+    `update requests set cliente_user_id = null
+     where cliente_user_id is not null and cliente_user_id not in (${userSlots})`,
+    keepIds,
+  );
+  await sql(`delete from users where id not in (${userSlots})`, keepIds);
+  await sql(
+    `insert into bim_flags (key, value) values ('staff_rotation', $1)
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    [STAFF_ROTATION],
+  );
 }
 
 let seedPromise: Promise<void> | null = null;
@@ -87,22 +126,37 @@ async function runSeed() {
   const regions = await sql<{ id: string; name: string }>("select id, name from regions");
   const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
 
+  const keepIds: string[] = [];
+  let ejecutivoId = "";
   for (const u of users) {
-    const stored = await sql<{ id: string }>("select id from users where email = $1", [u.email]);
-    if (stored[0]) continue;
-    await sql(
-      `insert into users (id, email, name, role, password_hash, region_id)
-       values ($1,$2,$3,$4,$5,$6)`,
-      [id("usr"), u.email, u.name, u.role, hashPassword(u.password), u.role === "ejecutivo" ? norte : null],
+    const regionId = u.role === "ejecutivo" ? norte : null;
+    const stored = await sql<{ id: string; password_hash: string }>(
+      "select id, password_hash from users where lower(email) = lower($1) limit 1",
+      [u.email],
     );
+    let userId = stored[0]?.id ?? "";
+    if (stored[0]) {
+      const nextHash = verifyPassword(u.password, stored[0].password_hash)
+        ? stored[0].password_hash
+        : hashPassword(u.password);
+      await sql(
+        "update users set email = $1, name = $2, role = $3, region_id = $4, password_hash = $5 where id = $6",
+        [u.email, u.name, u.role, regionId, nextHash, stored[0].id],
+      );
+    } else {
+      userId = id("usr");
+      await sql(
+        `insert into users (id, email, name, role, password_hash, region_id)
+         values ($1,$2,$3,$4,$5,$6)`,
+        [userId, u.email, u.name, u.role, hashPassword(u.password), regionId],
+      );
+    }
+    keepIds.push(userId);
+    if (u.role === "ejecutivo" && !ejecutivoId) ejecutivoId = userId;
   }
 
-  const ejecutivo = users.find((user) => user.role === "ejecutivo");
-  if (!ejecutivo) return;
-  const ej = await sql<{ id: string }>("select id from users where email = $1 limit 1", [
-    ejecutivo.email,
-  ]);
-  if (!ej[0]) return;
+  await replaceStaffOnce(keepIds, ejecutivoId);
+  if (!ejecutivoId) return;
 
   const bizCount = await sql<{ c: string }>("select count(*)::text as c from businesses");
   if (Number(bizCount[0]?.c || 0) === 0) {
@@ -128,7 +182,7 @@ async function runSeed() {
         "$75,000",
         "$18,000 mensuales",
         "Administración y garantía de desarrollo inmobiliario",
-        ej[0].id,
+        ejecutivoId,
         JSON.stringify(["alta_checklist", "caratula_ofid", "kyc_pf", "aviso_privacidad"]),
         "en_proceso",
         norte,
