@@ -44,6 +44,10 @@ export function postOriginAllowed(request: Request, options?: { requireOrigin?: 
   return candidateHosts(request).includes(originHost);
 }
 
+export function publicBase(request: Request): string {
+  return redirectBase(request);
+}
+
 function redirectBase(request: Request): string {
   for (const host of candidateHosts(request)) {
     if (!PUBLIC_HOSTS.has(host) && !isLocalHost(host)) continue;

@@ -67,7 +67,7 @@ export default async function HomePage({
           <Link href="/restablecer">Restablecer contraseña</Link>
         </p>
         <p className="muted" style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
-          El cliente entra con el código del correo. El ejecutivo puede definir una contraseña nueva.
+          El cliente entra con el código del correo. Para cambiar la contraseña, el enlace llega al correo de la cuenta.
         </p>
         <p style={{ marginTop: "0.75rem" }}>
           <Link className="btn btn-secondary" href="/cliente/acceso">

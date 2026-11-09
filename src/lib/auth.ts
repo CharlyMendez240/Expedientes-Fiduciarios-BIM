@@ -1,6 +1,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { ensureRuntimeSchema, ensureSeed, pgCode, sql } from "./db";
+import { sendPasswordResetEmail } from "./mailer";
 import { authCodeDigest, id as makeId, sessionToken } from "./ids";
 
 export type Role = "superusuario" | "ejecutivo" | "cliente";
@@ -251,53 +252,95 @@ export async function login(email: string, password: string): Promise<LoginResul
   };
 }
 
-export type PasswordAccount =
-  | { status: "staff"; email: string }
-  | { status: "cliente" | "missing" | "locked" | "invalid" };
+const RESET_MINUTES = 30;
 
-export async function lookupPasswordAccount(email: string): Promise<PasswordAccount> {
+async function ensureResetTable() {
+  await sql(
+    `create table if not exists password_resets (
+       id text primary key,
+       user_id text not null references users(id) on delete cascade,
+       token_hash text not null unique,
+       expires_at timestamptz not null,
+       created_at timestamptz not null default now()
+     )`,
+  );
+}
+
+export async function requestPasswordReset(email: string, origin: string): Promise<void> {
   await ensureSeed();
   const subject = subjectOf(email);
-  if (!subject || !/^[^\s@]+@[^\s@]+$/.test(subject)) return { status: "invalid" };
-  if ((await gateAttempt(subject, "password")) === "locked") return { status: "locked" };
+  if (!subject || !/^[^\s@]+@[^\s@]+$/.test(subject)) return;
+  const bucket = `reset:${subject}`.slice(0, 200);
+  if ((await gateAttempt(bucket, "password")) === "locked") return;
+  if ((await registerFailure(bucket, "password")) === "locked") return;
   const user = await findUserByEmail(subject);
-  if (!user) return { status: "missing" };
-  if (user.role === "cliente") return { status: "cliente" };
-  return { status: "staff", email: user.email };
+  if (!user || user.role === "cliente") return;
+
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = authCodeDigest(token);
+  const expires = new Date(Date.now() + RESET_MINUTES * 60 * 1000).toISOString();
+  await ensureResetTable();
+  await sql("delete from password_resets where user_id = $1", [user.id]);
+  await sql(
+    "insert into password_resets (id, user_id, token_hash, expires_at) values ($1,$2,$3,$4)",
+    [makeId("rst"), user.id, tokenHash, expires],
+  );
+  const link = `${origin}/restablecer/confirmar?token=${encodeURIComponent(token)}`;
+  const sent = await sendPasswordResetEmail(user.email, link);
+  if (!sent) await sql("delete from password_resets where token_hash = $1", [tokenHash]);
 }
 
-export async function rejectUnknownReset(email: string): Promise<"locked" | "invalid"> {
+export async function passwordResetTarget(token: string): Promise<string | null> {
   await ensureSeed();
-  const subject = subjectOf(email);
-  if (!subject) return "invalid";
-  if ((await gateAttempt(subject, "password")) === "locked") return "locked";
-  verifyPassword(email, DUMMY_PASSWORD_HASH);
-  return (await registerFailure(subject, "password")) === "locked" ? "locked" : "invalid";
+  const normalized = token.trim();
+  if (normalized.length < 20 || normalized.length > 200) return null;
+  try {
+    await ensureResetTable();
+    const rows = await sql<{ email: string; expires_at: string }>(
+      `select u.email, r.expires_at
+       from password_resets r join users u on u.id = r.user_id
+       where r.token_hash = $1 and u.role <> 'cliente'
+       limit 1`,
+      [authCodeDigest(normalized)],
+    );
+    const row = rows[0];
+    if (!row || new Date(row.expires_at).getTime() < Date.now()) return null;
+    return row.email;
+  } catch {
+    return null;
+  }
 }
 
-export async function resetStaffPassword(
-  email: string,
+export async function completePasswordReset(
+  token: string,
   password: string,
   confirm: string,
-): Promise<"ok" | "locked" | "weak" | "mismatch" | "invalid"> {
+): Promise<"ok" | "weak" | "mismatch" | "invalid"> {
   await ensureSeed();
-  const subject = subjectOf(email);
-  if (!subject) return "invalid";
-  if ((await gateAttempt(subject, "password")) === "locked") return "locked";
   if (password !== confirm) return "mismatch";
   if (!passwordIsStrong(password)) return "weak";
-  const user = await findUserByEmail(subject);
-  if (!user || user.role === "cliente") {
-    verifyPassword(password, DUMMY_PASSWORD_HASH);
-    return (await registerFailure(subject, "password")) === "locked" ? "locked" : "invalid";
+  const normalized = token.trim();
+  if (normalized.length < 20 || normalized.length > 200) return "invalid";
+  await ensureResetTable();
+  const rows = await sql<{ id: string; user_id: string; expires_at: string }>(
+    `select r.id, r.user_id, r.expires_at
+     from password_resets r join users u on u.id = r.user_id
+     where r.token_hash = $1 and u.role <> 'cliente'
+     limit 1`,
+    [authCodeDigest(normalized)],
+  );
+  const row = rows[0];
+  if (!row || new Date(row.expires_at).getTime() < Date.now()) {
+    if (row) await sql("delete from password_resets where id = $1", [row.id]);
+    return "invalid";
   }
-  await sql("update users set password_hash = $1 where id = $2", [hashPassword(password), user.id]);
+  await sql("update users set password_hash = $1 where id = $2", [hashPassword(password), row.user_id]);
+  await sql("delete from password_resets where user_id = $1", [row.user_id]);
   try {
-    await sql("delete from sessions where user_id = $1", [user.id]);
+    await sql("delete from sessions where user_id = $1", [row.user_id]);
   } catch {
     // The new password remains even if the session table is unavailable.
   }
-  await registerSuccess(subject, "password");
   return "ok";
 }
 

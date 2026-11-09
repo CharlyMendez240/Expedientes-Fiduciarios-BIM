@@ -1,4 +1,4 @@
-import { hashPassword, passwordIsStrong } from "./auth";
+import { hashPassword, passwordIsStrong, verifyPassword } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
 import { id } from "./ids";
@@ -27,29 +27,20 @@ function demoUsers(): DemoUser[] {
   const superEmail = readEmail("BIM_SUPER_EMAIL");
   const ejecutivoPassword = readSecret("BIM_EJECUTIVO_PASSWORD");
   const ejecutivoEmail = readEmail("BIM_EJECUTIVO_EMAIL");
-  const ejecutivo2Email = readEmail("BIM_EJECUTIVO2_EMAIL");
   const users: DemoUser[] = [];
   if (superPassword && superEmail) {
     users.push({
       email: superEmail,
       password: superPassword,
-      name: "Superusuario BIM",
+      name: "Superusuario",
       role: "superusuario",
     });
   }
-  if (ejecutivoPassword && ejecutivoEmail) {
+  if (ejecutivoPassword && ejecutivoEmail && ejecutivoEmail !== superEmail) {
     users.push({
       email: ejecutivoEmail,
       password: ejecutivoPassword,
-      name: "Ejecutivo de prueba",
-      role: "ejecutivo",
-    });
-  }
-  if (ejecutivoPassword && ejecutivo2Email && ejecutivo2Email !== ejecutivoEmail) {
-    users.push({
-      email: ejecutivo2Email,
-      password: ejecutivoPassword,
-      name: "Ejecutivo de prueba 2",
+      name: "Ejecutivo",
       role: "ejecutivo",
     });
   }
@@ -66,6 +57,21 @@ export async function seedDemoData() {
     });
   }
   await seedPromise;
+}
+
+async function retainStaff(keepIds: string[], ejecutivoId: string) {
+  const userSlots = keepIds.map((_, index) => `$${index + 1}`).join(", ");
+  const businessSlots = keepIds.map((_, index) => `$${index + 2}`).join(", ");
+  await sql(
+    `update businesses set ejecutivo_id = $1 where ejecutivo_id not in (${businessSlots})`,
+    [ejecutivoId, ...keepIds],
+  );
+  await sql(
+    `update requests set cliente_user_id = null
+     where cliente_user_id is not null and cliente_user_id not in (${userSlots})`,
+    keepIds,
+  );
+  await sql(`delete from users where id not in (${userSlots})`, keepIds);
 }
 
 async function runSeed() {
@@ -87,22 +93,39 @@ async function runSeed() {
   const regions = await sql<{ id: string; name: string }>("select id, name from regions");
   const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
 
+  const keepIds: string[] = [];
   for (const u of users) {
-    const stored = await sql<{ id: string }>("select id from users where email = $1", [u.email]);
-    if (stored[0]) continue;
+    const regionId = u.role === "ejecutivo" ? norte : null;
+    const stored = await sql<{ id: string; password_hash: string }>(
+      "select id, password_hash from users where lower(email) = lower($1) limit 1",
+      [u.email],
+    );
+    if (stored[0]) {
+      const nextHash = verifyPassword(u.password, stored[0].password_hash)
+        ? stored[0].password_hash
+        : hashPassword(u.password);
+      await sql(
+        "update users set email = $1, name = $2, role = $3, region_id = $4, password_hash = $5 where id = $6",
+        [u.email, u.name, u.role, regionId, nextHash, stored[0].id],
+      );
+      keepIds.push(stored[0].id);
+      continue;
+    }
+    const userId = id("usr");
     await sql(
       `insert into users (id, email, name, role, password_hash, region_id)
        values ($1,$2,$3,$4,$5,$6)`,
-      [id("usr"), u.email, u.name, u.role, hashPassword(u.password), u.role === "ejecutivo" ? norte : null],
+      [userId, u.email, u.name, u.role, hashPassword(u.password), regionId],
     );
+    keepIds.push(userId);
   }
 
   const ejecutivo = users.find((user) => user.role === "ejecutivo");
-  if (!ejecutivo) return;
-  const ej = await sql<{ id: string }>("select id from users where email = $1 limit 1", [
-    ejecutivo.email,
-  ]);
-  if (!ej[0]) return;
+  const ejecutivoId = ejecutivo ? keepIds[users.findIndex((user) => user.role === "ejecutivo")] : "";
+  if (users.length >= 2 && keepIds.length >= 2 && ejecutivoId) {
+    await retainStaff(keepIds, ejecutivoId);
+  }
+  if (!ejecutivoId) return;
 
   const bizCount = await sql<{ c: string }>("select count(*)::text as c from businesses");
   if (Number(bizCount[0]?.c || 0) === 0) {
@@ -128,7 +151,7 @@ async function runSeed() {
         "$75,000",
         "$18,000 mensuales",
         "Administración y garantía de desarrollo inmobiliario",
-        ej[0].id,
+        ejecutivoId,
         JSON.stringify(["alta_checklist", "caratula_ofid", "kyc_pf", "aviso_privacidad"]),
         "en_proceso",
         norte,
