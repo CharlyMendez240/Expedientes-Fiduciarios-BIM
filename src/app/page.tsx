@@ -7,7 +7,7 @@ import { ensureSeed } from "@/lib/db";
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; code?: string; listo?: string }>;
+  searchParams: Promise<{ error?: string; listo?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -33,10 +33,7 @@ export default async function HomePage({
         {params.error === "locked" ? (
           <div className="error">Demasiados intentos. Espere 15 minutos e intente de nuevo.</div>
         ) : params.error === "server" ? (
-          <div className="error">
-            No se pudo iniciar sesión por un error del servidor. Intente de nuevo.
-            {/^[0-9A-Z]{5}$/.test(params.code || "") ? ` (${params.code})` : ""}
-          </div>
+          <div className="error">No se pudo iniciar sesión por un error del servidor. Intente de nuevo.</div>
         ) : params.error ? (
           <div className="error">Credenciales incorrectas. Revise usuario y contraseña.</div>
         ) : params.listo ? (

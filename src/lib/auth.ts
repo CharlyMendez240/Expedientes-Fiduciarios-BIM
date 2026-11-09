@@ -266,26 +266,52 @@ async function ensureResetTable() {
   );
 }
 
+export const RESET_COOKIE = "bim_reset";
+const RESET_COOLDOWN_MS = 2 * 60 * 1000;
+
+export function resetCookieOptions() {
+  return {
+    httpOnly: true as const,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: RESET_MINUTES * 60,
+  };
+}
+
+export function safeResetToken(value: string): string {
+  const token = value.trim();
+  if (!/^[A-Za-z0-9_-]{20,200}$/.test(token)) return "";
+  return token;
+}
+
 export async function requestPasswordReset(email: string, origin: string): Promise<void> {
   await ensureSeed();
   const subject = subjectOf(email);
   if (!subject || !/^[^\s@]+@[^\s@]+$/.test(subject)) return;
-  const bucket = `reset:${subject}`.slice(0, 200);
-  if ((await gateAttempt(bucket, "password")) === "locked") return;
-  if ((await registerFailure(bucket, "password")) === "locked") return;
   const user = await findUserByEmail(subject);
   if (!user || user.role === "cliente") return;
+
+  await ensureResetTable();
+  const pending = await sql<{ created_at: string }>(
+    `select created_at from password_resets
+     where user_id = $1 and expires_at > now()
+     order by created_at desc
+     limit 1`,
+    [user.id],
+  );
+  const createdAt = pending[0]?.created_at ? new Date(pending[0].created_at).getTime() : 0;
+  if (createdAt && Date.now() - createdAt < RESET_COOLDOWN_MS) return;
 
   const token = randomBytes(32).toString("base64url");
   const tokenHash = authCodeDigest(token);
   const expires = new Date(Date.now() + RESET_MINUTES * 60 * 1000).toISOString();
-  await ensureResetTable();
   await sql("delete from password_resets where user_id = $1", [user.id]);
   await sql(
     "insert into password_resets (id, user_id, token_hash, expires_at) values ($1,$2,$3,$4)",
     [makeId("rst"), user.id, tokenHash, expires],
   );
-  const link = `${origin}/restablecer/confirmar?token=${encodeURIComponent(token)}`;
+  const link = `${origin}/api/restablecer/abrir?token=${encodeURIComponent(token)}`;
   const sent = await sendPasswordResetEmail(user.email, link);
   if (!sent) await sql("delete from password_resets where token_hash = $1", [tokenHash]);
 }

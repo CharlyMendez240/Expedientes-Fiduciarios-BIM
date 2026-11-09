@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { BimLogo } from "@/components/BimLogo";
-import { MIN_PASSWORD_LENGTH, passwordResetTarget } from "@/lib/auth";
+import { MIN_PASSWORD_LENGTH, RESET_COOKIE, passwordResetTarget, safeResetToken } from "@/lib/auth";
 import { ensureSeed } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 
 export default async function ConfirmResetPage({
   searchParams,
@@ -10,7 +14,11 @@ export default async function ConfirmResetPage({
 }) {
   await ensureSeed();
   const params = await searchParams;
-  const token = (params.token || "").trim();
+  if (params.token) {
+    redirect(`/api/restablecer/abrir?token=${encodeURIComponent(params.token)}`);
+  }
+  const jar = await cookies();
+  const token = safeResetToken(jar.get(RESET_COOKIE)?.value || "");
   const email = token ? await passwordResetTarget(token) : null;
 
   return (
@@ -34,7 +42,6 @@ export default async function ConfirmResetPage({
               <div className="error">No se pudo guardar la contraseña. Intente de nuevo.</div>
             ) : null}
             <form action="/api/restablecer/confirmar" method="post" className="stack" style={{ marginTop: "1rem" }}>
-              <input type="hidden" name="token" value={token} />
               <div>
                 <label htmlFor="password">Nueva contraseña</label>
                 <input

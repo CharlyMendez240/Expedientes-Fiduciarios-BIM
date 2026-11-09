@@ -26,10 +26,8 @@ export async function POST(request: Request) {
     }
     return redirectWithSession(request, "/cliente/carga", result.token);
   } catch (error) {
-    const code = pgCode(error);
-    console.error("login", code || "error");
+    console.error("login", pgCode(error) || "error");
     const params = new URLSearchParams({ error: "server" });
-    if (code) params.set("code", code);
     if (email) params.set("email", email);
     return redirectWithSession(request, `/cliente/acceso?${params.toString()}`);
   }
