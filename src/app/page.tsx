@@ -7,7 +7,7 @@ import { ensureSeed } from "@/lib/db";
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; code?: string }>;
+  searchParams: Promise<{ error?: string; code?: string; listo?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -39,6 +39,8 @@ export default async function HomePage({
           </div>
         ) : params.error ? (
           <div className="error">Credenciales incorrectas. Revise usuario y contraseña.</div>
+        ) : params.listo ? (
+          <div className="flash">Contraseña actualizada. Ya puede entrar con la nueva.</div>
         ) : null}
 
         <form action="/api/login" method="post" className="stack" style={{ marginTop: "1rem" }}>
@@ -61,8 +63,11 @@ export default async function HomePage({
           </button>
         </form>
 
+        <p style={{ marginTop: "1rem" }}>
+          <Link href="/restablecer">Restablecer contraseña</Link>
+        </p>
         <p className="muted" style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
-          El administrador configura el acceso. Esta aplicación no incluye contraseñas.
+          El cliente entra con el código del correo. El ejecutivo puede definir una contraseña nueva.
         </p>
         <p style={{ marginTop: "0.75rem" }}>
           <Link className="btn btn-secondary" href="/cliente/acceso">
