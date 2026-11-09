@@ -251,6 +251,56 @@ export async function login(email: string, password: string): Promise<LoginResul
   };
 }
 
+export type PasswordAccount =
+  | { status: "staff"; email: string }
+  | { status: "cliente" | "missing" | "locked" | "invalid" };
+
+export async function lookupPasswordAccount(email: string): Promise<PasswordAccount> {
+  await ensureSeed();
+  const subject = subjectOf(email);
+  if (!subject || !/^[^\s@]+@[^\s@]+$/.test(subject)) return { status: "invalid" };
+  if ((await gateAttempt(subject, "password")) === "locked") return { status: "locked" };
+  const user = await findUserByEmail(subject);
+  if (!user) return { status: "missing" };
+  if (user.role === "cliente") return { status: "cliente" };
+  return { status: "staff", email: user.email };
+}
+
+export async function rejectUnknownReset(email: string): Promise<"locked" | "invalid"> {
+  await ensureSeed();
+  const subject = subjectOf(email);
+  if (!subject) return "invalid";
+  if ((await gateAttempt(subject, "password")) === "locked") return "locked";
+  verifyPassword(email, DUMMY_PASSWORD_HASH);
+  return (await registerFailure(subject, "password")) === "locked" ? "locked" : "invalid";
+}
+
+export async function resetStaffPassword(
+  email: string,
+  password: string,
+  confirm: string,
+): Promise<"ok" | "locked" | "weak" | "mismatch" | "invalid"> {
+  await ensureSeed();
+  const subject = subjectOf(email);
+  if (!subject) return "invalid";
+  if ((await gateAttempt(subject, "password")) === "locked") return "locked";
+  if (password !== confirm) return "mismatch";
+  if (!passwordIsStrong(password)) return "weak";
+  const user = await findUserByEmail(subject);
+  if (!user || user.role === "cliente") {
+    verifyPassword(password, DUMMY_PASSWORD_HASH);
+    return (await registerFailure(subject, "password")) === "locked" ? "locked" : "invalid";
+  }
+  await sql("update users set password_hash = $1 where id = $2", [hashPassword(password), user.id]);
+  try {
+    await sql("delete from sessions where user_id = $1", [user.id]);
+  } catch {
+    // The new password remains even if the session table is unavailable.
+  }
+  await registerSuccess(subject, "password");
+  return "ok";
+}
+
 export async function logout() {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;

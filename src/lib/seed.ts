@@ -1,4 +1,4 @@
-import { hashPassword, passwordIsStrong, verifyPassword } from "./auth";
+import { hashPassword, passwordIsStrong } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
 import { id } from "./ids";
@@ -88,19 +88,8 @@ async function runSeed() {
   const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
 
   for (const u of users) {
-    const stored = await sql<{ password_hash: string }>(
-      "select password_hash from users where email = $1",
-      [u.email],
-    );
-    if (stored[0]) {
-      if (!verifyPassword(u.password, stored[0].password_hash)) {
-        await sql("update users set password_hash = $1 where email = $2", [
-          hashPassword(u.password),
-          u.email,
-        ]);
-      }
-      continue;
-    }
+    const stored = await sql<{ id: string }>("select id from users where email = $1", [u.email]);
+    if (stored[0]) continue;
     await sql(
       `insert into users (id, email, name, role, password_hash, region_id)
        values ($1,$2,$3,$4,$5,$6)`,

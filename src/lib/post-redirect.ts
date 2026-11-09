@@ -31,9 +31,9 @@ function isLocalHost(host: string): boolean {
   return host === "localhost" || host.startsWith("localhost:") || host === "127.0.0.1" || host.startsWith("127.0.0.1:");
 }
 
-export function postOriginAllowed(request: Request): boolean {
+export function postOriginAllowed(request: Request, options?: { requireOrigin?: boolean }): boolean {
   const origin = request.headers.get("origin");
-  if (!origin) return true;
+  if (!origin) return !options?.requireOrigin;
   let originHost = "";
   try {
     originHost = canonicalHost(new URL(origin).host);
@@ -56,10 +56,13 @@ function redirectBase(request: Request): string {
   return "https://expedientes-digitales.apps.grok.bot";
 }
 
-export function redirectWithSession(request: Request, path: string, token?: string) {
+export function redirectWithSession(request: Request, path: string, token?: string, clearSession = false) {
   const safe = path.startsWith("/") && !path.startsWith("//") ? path : "/";
   const response = NextResponse.redirect(new URL(safe, redirectBase(request)), 303);
   response.headers.set("Cache-Control", "no-store");
   if (token) response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+  if (clearSession) {
+    response.cookies.set(SESSION_COOKIE, "", { ...sessionCookieOptions(), maxAge: 0 });
+  }
   return response;
 }
