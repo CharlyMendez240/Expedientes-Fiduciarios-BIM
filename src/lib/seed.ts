@@ -70,35 +70,8 @@ export async function seedDemoData() {
 
 async function runSeed() {
   await ensureFormatTemplates();
-  await sql(
-    `update outbound_emails
-     set auth_code = '',
-         body_html = '<p>Solicitud registrada. El código de acceso no se guarda en el correo.</p>'
-     where auth_code <> '' or body_html like '%letter-spacing%'`,
-  );
   const users = demoUsers();
   if (!users.length) return;
-
-  const emails = users.map((user) => user.email);
-  const existing = await sql<{ email: string }>(
-    `select email from users where email in (${emails.map((_, index) => `$${index + 1}`).join(", ")})`,
-    emails,
-  );
-  if (existing.length) {
-    for (const user of users) {
-      const stored = await sql<{ password_hash: string }>(
-        "select password_hash from users where email = $1",
-        [user.email],
-      );
-      if (stored[0] && !verifyPassword(user.password, stored[0].password_hash)) {
-        await sql("update users set password_hash = $1 where email = $2", [
-          hashPassword(user.password),
-          user.email,
-        ]);
-      }
-    }
-    return;
-  }
 
   const regionNorte = id("reg");
   const regionCentro = id("reg");
@@ -115,18 +88,23 @@ async function runSeed() {
   const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
 
   for (const u of users) {
-    const uid = id("usr");
+    const stored = await sql<{ password_hash: string }>(
+      "select password_hash from users where email = $1",
+      [u.email],
+    );
+    if (stored[0]) {
+      if (!verifyPassword(u.password, stored[0].password_hash)) {
+        await sql("update users set password_hash = $1 where email = $2", [
+          hashPassword(u.password),
+          u.email,
+        ]);
+      }
+      continue;
+    }
     await sql(
       `insert into users (id, email, name, role, password_hash, region_id)
-       values ($1,$2,$3,$4,$5,$6) on conflict (email) do nothing`,
-      [
-        uid,
-        u.email,
-        u.name,
-        u.role,
-        hashPassword(u.password),
-        u.role === "ejecutivo" ? norte : null,
-      ],
+       values ($1,$2,$3,$4,$5,$6)`,
+      [id("usr"), u.email, u.name, u.role, hashPassword(u.password), u.role === "ejecutivo" ? norte : null],
     );
   }
 
@@ -168,8 +146,6 @@ async function runSeed() {
       ],
     );
   }
-
-  await ensureFormatTemplates();
 }
 
 async function ensureFormatTemplates() {

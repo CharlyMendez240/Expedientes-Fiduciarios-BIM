@@ -258,8 +258,8 @@ export default async function NegocioDetailPage({
                                 </div>
                               </div>
                               {uploaded ? (
-                                <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`}>
-                                  Descargar
+                                <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`} target="_blank" rel="noreferrer">
+                                  Ver
                                 </a>
                               ) : null}
                             </div>
@@ -303,8 +303,8 @@ export default async function NegocioDetailPage({
                         </div>
                       </div>
                       {uploaded ? (
-                        <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`}>
-                          Descargar
+                        <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`} target="_blank" rel="noreferrer">
+                          Ver
                         </a>
                       ) : null}
                     </div>

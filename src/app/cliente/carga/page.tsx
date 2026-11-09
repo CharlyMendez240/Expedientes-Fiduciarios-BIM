@@ -96,8 +96,8 @@ export default async function ClienteCargaPage({
                     {uploaded ? uploaded.file_name : "Pendiente"}
                   </div>
                   {uploaded ? (
-                    <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`}>
-                      Ver o descargar
+                    <a className="btn btn-secondary" href={`/api/business-documents/${uploaded.id}`} target="_blank" rel="noreferrer">
+                      Ver
                     </a>
                   ) : null}
                   <form

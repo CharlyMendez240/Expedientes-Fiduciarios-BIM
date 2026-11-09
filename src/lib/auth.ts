@@ -73,7 +73,7 @@ async function gateAttempt(subject: string, channel: AttemptChannel): Promise<"o
     );
     return "ok";
   } catch {
-    return "ok";
+    return "locked";
   }
 }
 
@@ -102,7 +102,7 @@ async function registerFailure(subject: string, channel: AttemptChannel): Promis
     }
     return failures >= MAX_LOGIN_FAILURES ? "locked" : "invalid";
   } catch {
-    return "invalid";
+    return "locked";
   }
 }
 
