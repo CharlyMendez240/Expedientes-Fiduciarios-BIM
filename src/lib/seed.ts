@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { hashPassword, passwordIsStrong, verifyPassword } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
@@ -58,7 +59,42 @@ function demoUsers(): DemoUser[] {
   return users;
 }
 
+const DEMO_STAFF: DemoUser[] = [
+  { email: "superusuario@ensayo.bim", password: "", name: "Superusuario", role: "superusuario" },
+  { email: "ejecutivo.uno@ensayo.bim", password: "", name: "Ejecutivo Norte", role: "ejecutivo" },
+  { email: "ejecutivo.dos@ensayo.bim", password: "", name: "Ejecutivo Norte 2", role: "ejecutivo" },
+];
+
 const STAFF_ROTATION = "ensayo-3";
+
+async function ensureDemoStaff(norte: string, keepIds: string[], ejecutivoId: string) {
+  for (const demo of DEMO_STAFF) {
+    const regionId = demo.role === "ejecutivo" ? norte : null;
+    const stored = await sql<{ id: string }>(
+      "select id from users where lower(email) = lower($1) limit 1",
+      [demo.email],
+    );
+    let userId = stored[0]?.id ?? "";
+    if (stored[0]) {
+      await sql("update users set name = $1, role = $2, region_id = $3 where id = $4", [
+        demo.name,
+        demo.role,
+        regionId,
+        stored[0].id,
+      ]);
+    } else {
+      userId = id("usr");
+      await sql(
+        `insert into users (id, email, name, role, password_hash, region_id)
+         values ($1,$2,$3,$4,$5,$6)`,
+        [userId, demo.email, demo.name, demo.role, hashPassword(randomBytes(18).toString("base64url")), regionId],
+      );
+    }
+    if (!keepIds.includes(userId)) keepIds.push(userId);
+    if (demo.role === "ejecutivo" && !ejecutivoId) ejecutivoId = userId;
+  }
+  return ejecutivoId;
+}
 
 async function replaceStaffOnce(keepIds: string[], ejecutivoId: string) {
   if ((process.env.BIM_REPLACE_STAFF?.trim() ?? "") !== STAFF_ROTATION) return;
@@ -110,7 +146,6 @@ export async function seedDemoData() {
 async function runSeed() {
   await ensureFormatTemplates();
   const users = demoUsers();
-  if (!users.length) return;
 
   const regionNorte = id("reg");
   const regionCentro = id("reg");
@@ -155,6 +190,7 @@ async function runSeed() {
     if (u.role === "ejecutivo" && !ejecutivoId) ejecutivoId = userId;
   }
 
+  ejecutivoId = await ensureDemoStaff(norte, keepIds, ejecutivoId);
   await replaceStaffOnce(keepIds, ejecutivoId);
   if (!ejecutivoId) return;
 

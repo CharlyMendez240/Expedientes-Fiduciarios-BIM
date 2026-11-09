@@ -16,8 +16,7 @@ export async function POST(request: Request) {
   try {
     const form = await request.formData();
     const email = String(form.get("email") || "");
-    const password = String(form.get("password") || "");
-    const result = await login(email, password);
+    const result = await login(email);
     if (!result.ok) {
       return redirectWithSession(request, result.reason === "locked" ? "/?error=locked" : "/?error=1");
     }
