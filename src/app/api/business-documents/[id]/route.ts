@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { canAccessBusiness, getSession } from "@/lib/auth";
 import { ensureSeed, sql } from "@/lib/db";
+import { filePreviewResponse } from "@/lib/file-preview";
 
 export async function GET(
   _req: Request,
@@ -40,10 +41,5 @@ export async function GET(
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
-  return new NextResponse(Buffer.from(row.content_base64, "base64"), {
-    headers: {
-      "Content-Type": row.mime_type || "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${row.file_name}"`,
-    },
-  });
+  return filePreviewResponse(row.file_name, Buffer.from(row.content_base64, "base64"));
 }

@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { hashPassword, passwordIsStrong } from "./auth";
+import { hashPassword, passwordIsStrong, verifyPassword } from "./auth";
 import { sql } from "./db";
 import { FORMAT_CATALOG } from "./format-catalog";
 import { id } from "./ids";
@@ -69,23 +68,10 @@ export async function seedDemoData() {
   await seedPromise;
 }
 
-function accountFingerprint(users: DemoUser[]): string {
-  const material = users.map((user) => `${user.role}|${user.email}|${user.password}`).join("\n");
-  return createHash("sha256").update(material).digest("hex");
-}
-
 async function runSeed() {
   await ensureFormatTemplates();
   const users = demoUsers();
   if (!users.length) return;
-
-  await sql("create table if not exists app_meta (key text primary key, value text not null)");
-  const fingerprint = accountFingerprint(users);
-  const current = await sql<{ value: string }>("select value from app_meta where key = 'account_set'");
-  if (current[0]?.value === fingerprint) return;
-
-  await sql("delete from businesses");
-  await sql("delete from users");
 
   const regionNorte = id("reg");
   const regionCentro = id("reg");
@@ -102,26 +88,25 @@ async function runSeed() {
   const norte = regions.find((r) => r.name === "Norte")?.id || regionNorte;
 
   for (const u of users) {
-    const uid = id("usr");
+    const stored = await sql<{ password_hash: string }>(
+      "select password_hash from users where email = $1",
+      [u.email],
+    );
+    if (stored[0]) {
+      if (!verifyPassword(u.password, stored[0].password_hash)) {
+        await sql("update users set password_hash = $1 where email = $2", [
+          hashPassword(u.password),
+          u.email,
+        ]);
+      }
+      continue;
+    }
     await sql(
       `insert into users (id, email, name, role, password_hash, region_id)
-       values ($1,$2,$3,$4,$5,$6) on conflict (email) do nothing`,
-      [
-        uid,
-        u.email,
-        u.name,
-        u.role,
-        hashPassword(u.password),
-        u.role === "ejecutivo" ? norte : null,
-      ],
+       values ($1,$2,$3,$4,$5,$6)`,
+      [id("usr"), u.email, u.name, u.role, hashPassword(u.password), u.role === "ejecutivo" ? norte : null],
     );
   }
-
-  await sql(
-    `insert into app_meta (key, value) values ('account_set', $1)
-     on conflict (key) do update set value = excluded.value`,
-    [fingerprint],
-  );
 
   const ejecutivo = users.find((user) => user.role === "ejecutivo");
   if (!ejecutivo) return;
