@@ -27,7 +27,7 @@ export default async function HomePage({
       <section className="login-panel">
         <h2 className="section-title">Acceso</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Ejecutivo / superusuario con usuario y contraseña. Cliente con código del correo.
+          En esta demo el personal entra solo con su correo. El cliente sigue usando el código.
         </p>
 
         {params.error === "locked" ? (
@@ -35,7 +35,7 @@ export default async function HomePage({
         ) : params.error === "server" ? (
           <div className="error">No se pudo iniciar sesión por un error del servidor. Intente de nuevo.</div>
         ) : params.error ? (
-          <div className="error">Credenciales incorrectas. Revise usuario y contraseña.</div>
+          <div className="error">Ese correo no tiene una cuenta de personal.</div>
         ) : params.listo ? (
           <div className="flash">Contraseña actualizada. Ya puede entrar con la nueva.</div>
         ) : null}
@@ -45,26 +45,12 @@ export default async function HomePage({
             <label htmlFor="email">Correo</label>
             <input id="email" name="email" type="email" required autoComplete="username" />
           </div>
-          <div>
-            <label htmlFor="password">Contraseña</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-            />
-          </div>
           <button className="btn btn-primary" type="submit">
             Entrar
           </button>
         </form>
-
-        <p style={{ marginTop: "1rem" }}>
-          <Link href="/restablecer">Restablecer contraseña</Link>
-        </p>
         <p className="muted" style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
-          El cliente entra con el código del correo. Para cambiar la contraseña, el enlace llega al correo de la cuenta.
+          El cliente entra con el código del correo.
         </p>
         <p style={{ marginTop: "0.75rem" }}>
           <Link className="btn btn-secondary" href="/cliente/acceso">
