@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BimLogo } from "@/components/BimLogo";
-import { loginAction } from "@/lib/actions";
 import { getSession } from "@/lib/auth";
 import { ensureSeed } from "@/lib/db";
 
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; code?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -33,11 +32,16 @@ export default async function HomePage({
 
         {params.error === "locked" ? (
           <div className="error">Demasiados intentos. Espere 15 minutos e intente de nuevo.</div>
+        ) : params.error === "server" ? (
+          <div className="error">
+            No se pudo iniciar sesión por un error del servidor. Intente de nuevo.
+            {/^[0-9A-Z]{5}$/.test(params.code || "") ? ` (${params.code})` : ""}
+          </div>
         ) : params.error ? (
           <div className="error">Credenciales incorrectas. Revise usuario y contraseña.</div>
         ) : null}
 
-        <form action={loginAction} className="stack" style={{ marginTop: "1rem" }}>
+        <form action="/api/login" method="post" className="stack" style={{ marginTop: "1rem" }}>
           <div>
             <label htmlFor="email">Correo</label>
             <input id="email" name="email" type="email" required autoComplete="username" />

@@ -1,6 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { ensureSeed, sql } from "./db";
+import { ensureRuntimeSchema, ensureSeed, pgCode, sql } from "./db";
 import { authCodeDigest, id as makeId, sessionToken } from "./ids";
 
 export type Role = "superusuario" | "ejecutivo" | "cliente";
@@ -13,8 +13,19 @@ export type SessionUser = {
   region_id: string | null;
 };
 
-const COOKIE = "bim_session";
+export const SESSION_COOKIE = "bim_session";
 const SESSION_DAYS = 14;
+const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
+
+export function sessionCookieOptions() {
+  return {
+    httpOnly: true as const,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_SECONDS,
+  };
+}
 
 const SCRYPT_N = 16384;
 const SCRYPT_R = 8;
@@ -25,7 +36,7 @@ export const MIN_PASSWORD_LENGTH = 12;
 const MAX_LOGIN_FAILURES = 5;
 
 export type LoginResult =
-  | { ok: true; user: SessionUser }
+  | { ok: true; user: SessionUser; token: string }
   | { ok: false; reason: "invalid" | "locked" };
 
 type AttemptChannel = "password" | "code";
@@ -134,36 +145,82 @@ export function hashPassword(password: string): string {
 
 const DUMMY_PASSWORD_HASH = hashPassword(randomBytes(32).toString("base64url"));
 
-export function verifyPassword(password: string, stored: string): boolean {
+export function verifyPassword(password: string, stored: unknown): boolean {
+  if (typeof password !== "string" || typeof stored !== "string") return false;
   const parts = stored.split("$");
   if (parts.length !== 6 || parts[0] !== "scrypt") return false;
   const n = Number(parts[1]);
   const r = Number(parts[2]);
   const p = Number(parts[3]);
   if (n !== SCRYPT_N || r !== SCRYPT_R || p !== SCRYPT_P) return false;
-  const salt = Buffer.from(parts[4], "base64url");
-  const expected = Buffer.from(parts[5], "base64url");
-  if (salt.length !== 16 || expected.length !== SCRYPT_KEYLEN) return false;
-  const actual = scryptSync(password, salt, SCRYPT_KEYLEN, { N: n, r, p });
-  return timingSafeEqual(actual, expected);
+  try {
+    const salt = Buffer.from(parts[4], "base64url");
+    const expected = Buffer.from(parts[5], "base64url");
+    if (salt.length !== 16 || expected.length !== SCRYPT_KEYLEN) return false;
+    const actual = scryptSync(password, salt, SCRYPT_KEYLEN, { N: n, r, p });
+    if (actual.length !== expected.length) return false;
+    return timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
 
-async function createSession(userId: string) {
+type UserRecord = {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  password_hash: string;
+  region_id: string | null;
+};
+
+async function findUserByEmail(subject: string): Promise<UserRecord | null> {
+  try {
+    const rows = await sql<UserRecord>(
+      "select id, email, name, role, password_hash, region_id from users where lower(email) = lower($1) limit 1",
+      [subject],
+    );
+    return rows[0] ?? null;
+  } catch (error) {
+    if (pgCode(error) !== "42703") throw error;
+    const rows = await sql<Omit<UserRecord, "region_id">>(
+      "select id, email, name, role, password_hash from users where lower(email) = lower($1) limit 1",
+      [subject],
+    );
+    const row = rows[0];
+    return row ? { ...row, region_id: null } : null;
+  }
+}
+
+async function createSession(userId: string): Promise<string> {
   const token = sessionToken();
-  const expires = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
-  await sql("insert into sessions (token, user_id, expires_at) values ($1, $2, $3)", [
-    token,
-    userId,
-    expires.toISOString(),
-  ]);
-  const jar = await cookies();
-  jar.set(COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    expires,
-  });
+  const expires = new Date(Date.now() + SESSION_SECONDS * 1000).toISOString();
+  const insert = () =>
+    sql("insert into sessions (token, user_id, expires_at) values ($1, $2, $3)", [
+      token,
+      userId,
+      expires,
+    ]);
+  try {
+    await insert();
+  } catch (error) {
+    const code = pgCode(error);
+    if (code !== "42P01" && code !== "42703") throw error;
+    await ensureRuntimeSchema();
+    await sql(
+      `create table if not exists sessions (
+         token text primary key,
+         user_id text not null references users(id) on delete cascade,
+         created_at timestamptz not null default now(),
+         expires_at timestamptz not null
+       )`,
+    );
+    if (code === "42703") {
+      await sql("alter table sessions add column if not exists expires_at timestamptz");
+    }
+    await insert();
+  }
+  return token;
 }
 
 export async function login(email: string, password: string): Promise<LoginResult> {
@@ -172,18 +229,7 @@ export async function login(email: string, password: string): Promise<LoginResul
   if (!subject || !password) return { ok: false, reason: "invalid" };
   if ((await gateAttempt(subject, "password")) === "locked") return { ok: false, reason: "locked" };
 
-  const rows = await sql<{
-    id: string;
-    email: string;
-    name: string;
-    role: Role;
-    password_hash: string;
-    region_id: string | null;
-  }>(
-    "select id, email, name, role, password_hash, region_id from users where lower(email) = lower($1) limit 1",
-    [subject],
-  );
-  const user = rows[0];
+  const user = await findUserByEmail(subject);
   const staff = user && user.role !== "cliente" ? user : null;
   const passwordOk = staff ? verifyPassword(password, staff.password_hash) : false;
   if (!staff) verifyPassword(password, DUMMY_PASSWORD_HASH);
@@ -191,9 +237,10 @@ export async function login(email: string, password: string): Promise<LoginResul
     return { ok: false, reason: await registerFailure(subject, "password") };
   }
   await registerSuccess(subject, "password");
-  await createSession(staff.id);
+  const token = await createSession(staff.id);
   return {
     ok: true,
+    token,
     user: {
       id: staff.id,
       email: staff.email,
@@ -206,28 +253,53 @@ export async function login(email: string, password: string): Promise<LoginResul
 
 export async function logout() {
   const jar = await cookies();
-  const token = jar.get(COOKIE)?.value;
-  if (token) {
+  const token = jar.get(SESSION_COOKIE)?.value;
+  if (!token) return;
+  try {
     await sql("delete from sessions where token = $1", [token]);
-    jar.delete(COOKIE);
+  } catch {
+    // The browser cookie still has to be cleared.
+  }
+  jar.delete(SESSION_COOKIE);
+}
+
+async function sessionByToken(token: string): Promise<(SessionUser & { expires_at: string }) | null> {
+  try {
+    const rows = await sql<SessionUser & { expires_at: string }>(
+      `select u.id, u.email, u.name, u.role, u.region_id, s.expires_at
+       from sessions s join users u on u.id = s.user_id
+       where s.token = $1 limit 1`,
+      [token],
+    );
+    return rows[0] ?? null;
+  } catch (error) {
+    const code = pgCode(error);
+    if (code === "42P01") return null;
+    if (code !== "42703") throw error;
+    const rows = await sql<Omit<SessionUser, "region_id"> & { expires_at: string }>(
+      `select u.id, u.email, u.name, u.role, s.expires_at
+       from sessions s join users u on u.id = s.user_id
+       where s.token = $1 limit 1`,
+      [token],
+    );
+    const row = rows[0];
+    return row ? { ...row, region_id: null } : null;
   }
 }
 
 export async function getSession(): Promise<SessionUser | null> {
   await ensureSeed();
   const jar = await cookies();
-  const token = jar.get(COOKIE)?.value;
+  const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const rows = await sql<SessionUser & { expires_at: string }>(
-    `select u.id, u.email, u.name, u.role, u.region_id, s.expires_at
-     from sessions s join users u on u.id = s.user_id
-     where s.token = $1 limit 1`,
-    [token],
-  );
-  const row = rows[0];
+  const row = await sessionByToken(token);
   if (!row) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) {
-    await sql("delete from sessions where token = $1", [token]);
+    try {
+      await sql("delete from sessions where token = $1", [token]);
+    } catch {
+      return null;
+    }
     return null;
   }
   return {
@@ -299,11 +371,21 @@ export async function loginWithAuthCode(email: string, code: string): Promise<Lo
     }
   }
 
-  const userRows = await sql<SessionUser>(
-    "select id, email, name, role, region_id from users where id = $1",
-    [userId],
-  );
-  const user = userRows[0];
+  let user: SessionUser | undefined;
+  try {
+    const userRows = await sql<SessionUser>(
+      "select id, email, name, role, region_id from users where id = $1",
+      [userId],
+    );
+    user = userRows[0];
+  } catch (error) {
+    if (pgCode(error) !== "42703") throw error;
+    const userRows = await sql<Omit<SessionUser, "region_id">>(
+      "select id, email, name, role from users where id = $1",
+      [userId],
+    );
+    user = userRows[0] ? { ...userRows[0], region_id: null } : undefined;
+  }
   if (!user || user.role !== "cliente") {
     return { ok: false, reason: await registerFailure(subject, "code") };
   }
@@ -313,8 +395,8 @@ export async function loginWithAuthCode(email: string, code: string): Promise<Lo
     [user.id, req.id],
   );
   await registerSuccess(subject, "code");
-  await createSession(user.id);
-  return { ok: true, user };
+  const token = await createSession(user.id);
+  return { ok: true, token, user };
 }
 
 /** Negocios visibles: propio, misma región (ejecutivos) o todos (superusuario). */
