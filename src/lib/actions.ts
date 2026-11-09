@@ -11,9 +11,12 @@ import {
   login as doLogin,
   loginWithAuthCode,
   logout as doLogout,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+  type LoginResult,
   type SessionUser,
 } from "./auth";
-import { ensureSeed, sql } from "./db";
+import { ensureSeed, pgCode, sql } from "./db";
 import { buildClientInviteEmail, INVITE_CODE_COOKIE } from "./email";
 import { CLIENT_REQUEST_TAB, clientRequestDocs, tabByKey } from "./expediente-tabs";
 import { authCode, authCodeDigest, id, inviteToken } from "./ids";
@@ -36,11 +39,34 @@ async function loadBusinessForUser(user: SessionUser, businessId: string) {
   return business;
 }
 
+function serverErrorPath(error: unknown, base: string): string {
+  const code = pgCode(error);
+  const join = base.includes("?") ? "&" : "?";
+  return code ? `${base}${join}error=server&code=${code}` : `${base}${join}error=server`;
+}
+
+async function rememberSession(token: string) {
+  const jar = await cookies();
+  jar.set(SESSION_COOKIE, token, sessionCookieOptions());
+}
+
 export async function loginAction(formData: FormData) {
   const email = String(formData.get("email") || "");
   const password = String(formData.get("password") || "");
-  const result = await doLogin(email, password);
+  let result: LoginResult;
+  try {
+    result = await doLogin(email, password);
+  } catch (error) {
+    console.error("login", pgCode(error) || "error");
+    redirect(serverErrorPath(error, "/"));
+  }
   if (!result.ok) redirect(result.reason === "locked" ? "/?error=locked" : "/?error=1");
+  try {
+    await rememberSession(result.token);
+  } catch (error) {
+    console.error("session", pgCode(error) || "cookie");
+    redirect("/?error=server");
+  }
   if (result.user.role === "superusuario") redirect("/admin");
   if (result.user.role === "ejecutivo") redirect("/ejecutivo");
   redirect("/");
@@ -306,12 +332,26 @@ export async function inviteClientAction(businessId: string, formData: FormData)
 export async function loginWithCodeAction(formData: FormData) {
   const email = String(formData.get("email") || "");
   const code = String(formData.get("auth_code") || "");
-  const result = await loginWithAuthCode(email, code);
+  let result: LoginResult;
+  try {
+    result = await loginWithAuthCode(email, code);
+  } catch (error) {
+    console.error("login", pgCode(error) || "error");
+    redirect(serverErrorPath(error, "/cliente/acceso"));
+  }
   if (!result.ok) {
     const params = new URLSearchParams({ error: result.reason === "locked" ? "locked" : "1" });
     const normalized = email.trim();
-    if (normalized) params.set("email", normalized);
+    if (normalized && /^[^\s@]+@[^\s@]+$/.test(normalized) && normalized.length <= 200) {
+      params.set("email", normalized);
+    }
     redirect(`/cliente/acceso?${params.toString()}`);
+  }
+  try {
+    await rememberSession(result.token);
+  } catch (error) {
+    console.error("session", pgCode(error) || "cookie");
+    redirect("/cliente/acceso?error=server");
   }
   redirect("/cliente/carga");
 }

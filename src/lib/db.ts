@@ -3,23 +3,83 @@ import { PGlite } from "@electric-sql/pglite";
 import pg from "pg";
 
 const databaseUrl = process.env.DATABASE_URL?.trim() ?? "";
-let pool: pg.Pool | undefined;
-let local: Promise<PGlite> | undefined;
-let seeded = false;
+const globalForDb = globalThis as unknown as {
+  bimPool?: pg.Pool;
+  bimLocal?: Promise<PGlite>;
+  bimSeeded?: boolean;
+};
+
+export function pgCode(error: unknown): string {
+  if (!error || typeof error !== "object" || !("code" in error)) return "";
+  const code = (error as { code: unknown }).code;
+  return typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : "";
+}
 
 export async function sql<T = Record<string, unknown>>(
   text: string,
   params: unknown[] = [],
 ): Promise<T[]> {
   if (databaseUrl !== "") {
-    pool ??= new pg.Pool({ connectionString: databaseUrl, max: 5 });
-    return (await pool.query(text, params)).rows as T[];
+    globalForDb.bimPool ??= new pg.Pool({ connectionString: databaseUrl, max: 5 });
+    return (await globalForDb.bimPool.query(text, params)).rows as T[];
   }
-  local ??= startLocal().catch((error: unknown) => {
-    local = undefined;
-    throw error;
-  });
-  return (await (await local).query<T>(text, params)).rows;
+  if (!globalForDb.bimLocal) {
+    globalForDb.bimLocal = startLocal().catch((error: unknown) => {
+      globalForDb.bimLocal = undefined;
+      throw error;
+    });
+  }
+  return (await (await globalForDb.bimLocal).query<T>(text, params)).rows;
+}
+
+const RUNTIME_SCHEMA = [
+  `create table if not exists regions (
+     id text primary key,
+     name text not null unique,
+     created_at timestamptz not null default now()
+   )`,
+  "alter table users add column if not exists region_id text",
+  "alter table businesses add column if not exists region_id text",
+  `create table if not exists sessions (
+     token text primary key,
+     user_id text not null references users(id) on delete cascade,
+     created_at timestamptz not null default now(),
+     expires_at timestamptz not null
+   )`,
+  "alter table sessions add column if not exists expires_at timestamptz",
+  `create table if not exists login_attempts (
+     subject text not null,
+     channel text not null check (channel in ('password', 'code')),
+     failures integer not null default 0,
+     locked_until timestamptz,
+     updated_at timestamptz not null default now(),
+     primary key (subject, channel)
+   )`,
+];
+
+const globalSchema = globalThis as unknown as { bimSchema?: Promise<void> | null };
+
+async function applyRuntimeSchema() {
+  let failed = false;
+  for (const statement of RUNTIME_SCHEMA) {
+    try {
+      await sql(statement);
+    } catch (error) {
+      failed = true;
+      console.error("schema", pgCode(error) || "error");
+    }
+  }
+  if (failed) throw new Error("schema");
+}
+
+export function ensureRuntimeSchema(): Promise<void> {
+  if (!globalSchema.bimSchema) {
+    globalSchema.bimSchema = applyRuntimeSchema().catch((error: unknown) => {
+      globalSchema.bimSchema = null;
+      console.error("schema", pgCode(error) || "error");
+    });
+  }
+  return globalSchema.bimSchema;
 }
 
 async function applyMigrations(exec: (sql: string) => Promise<unknown>, query: <T>(sql: string, params?: unknown[]) => Promise<{ rows: T[] }>) {
@@ -51,8 +111,9 @@ async function startLocal(): Promise<PGlite> {
 }
 
 export async function ensureSeed() {
-  if (seeded) return;
+  if (globalForDb.bimSeeded) return;
+  await ensureRuntimeSchema();
   const { seedDemoData } = await import("./seed");
   await seedDemoData();
-  seeded = true;
+  globalForDb.bimSeeded = true;
 }

@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BimLogo } from "@/components/BimLogo";
-import { loginWithCodeAction } from "@/lib/actions";
 import { getSession } from "@/lib/auth";
 import { ensureSeed } from "@/lib/db";
 
 export default async function ClienteAccesoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string; error?: string }>;
+  searchParams: Promise<{ email?: string; error?: string; code?: string }>;
 }) {
   await ensureSeed();
   const user = await getSession();
@@ -33,10 +32,15 @@ export default async function ClienteAccesoPage({
         </p>
         {q.error === "locked" ? (
           <div className="error">Demasiados intentos. Espere 15 minutos y pida un código nuevo.</div>
+        ) : q.error === "server" ? (
+          <div className="error">
+            No se pudo iniciar sesión por un error del servidor. Intente de nuevo.
+            {/^[0-9A-Z]{5}$/.test(q.code || "") ? ` (${q.code})` : ""}
+          </div>
         ) : q.error ? (
           <div className="error">Correo o código incorrectos, o el código expiró.</div>
         ) : null}
-        <form action={loginWithCodeAction} className="stack" style={{ marginTop: "1rem" }}>
+        <form action="/api/login/codigo" method="post" className="stack" style={{ marginTop: "1rem" }}>
           <div>
             <label htmlFor="email">Correo electrónico</label>
             <input
